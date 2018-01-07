@@ -34,6 +34,7 @@ import org.hisp.dhis.interpretation.Interpretation;
 import org.hisp.dhis.interpretation.InterpretationComment;
 import org.hisp.dhis.interpretation.InterpretationService;
 import org.hisp.dhis.interpretation.InterpretationStore;
+import org.hisp.dhis.interpretation.Mention;
 import org.hisp.dhis.mapping.Map;
 import org.hisp.dhis.period.PeriodService;
 import org.hisp.dhis.reporttable.ReportTable;
@@ -43,15 +44,19 @@ import org.hisp.dhis.user.UserService;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * @author Lars Helge Overland
  */
 @Transactional
 public class DefaultInterpretationService
-    implements InterpretationService
+    implements
+    InterpretationService
 {
     // -------------------------------------------------------------------------
     // Dependencies
@@ -107,6 +112,8 @@ public class DefaultInterpretationService
             }
 
             interpretation.updateSharing();
+            
+            interpretation.setMentions(this.updateMentions( interpretation.getText() ));
         }
 
         interpretationStore.save( interpretation );
@@ -130,6 +137,7 @@ public class DefaultInterpretationService
     public void updateInterpretation( Interpretation interpretation )
     {
         interpretation.updateSharing();
+        interpretation.setMentions(this.updateMentions( interpretation.getText() ));
         interpretationStore.update( interpretation );
     }
 
@@ -158,6 +166,29 @@ public class DefaultInterpretationService
     }
 
     @Override
+    public List<Mention> updateMentions( String text )
+    {
+        List<Mention> mentions = new ArrayList<Mention>();
+
+        Matcher matcher = Pattern.compile( "(?:\\s|^)@([\\w+._-]+)" ).matcher( text );
+        
+        
+        while ( matcher.find() )
+        {
+            String username = matcher.group(1);
+            if ( userService.getUserCredentialsByUsername( username ) != null )
+            {
+                Mention mention = new Mention();
+                mention.setCreated( new Date() );
+                mention.setUsername( username );
+                mentions.add( mention );
+            }
+        }
+
+        return (mentions.size() > 0) ? mentions : null;
+    }
+
+    @Override
     public InterpretationComment addInterpretationComment( String uid, String text )
     {
         Interpretation interpretation = getInterpretation( uid );
@@ -167,6 +198,7 @@ public class DefaultInterpretationService
         InterpretationComment comment = new InterpretationComment( text );
         comment.setLastUpdated( new Date() );
         comment.setUid( CodeGenerator.generateUid() );
+        comment.setMentions( this.updateMentions( text ) );
 
         if ( user != null )
         {

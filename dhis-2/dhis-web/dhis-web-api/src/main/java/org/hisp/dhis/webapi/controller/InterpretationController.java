@@ -28,6 +28,7 @@ package org.hisp.dhis.webapi.controller;
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+import com.google.common.collect.Lists;
 import org.hisp.dhis.chart.Chart;
 import org.hisp.dhis.common.AnalyticalObject;
 import org.hisp.dhis.common.IdentifiableObjectManager;
@@ -36,6 +37,7 @@ import org.hisp.dhis.dxf2.webmessage.WebMessageException;
 import org.hisp.dhis.dxf2.webmessage.WebMessageUtils;
 import org.hisp.dhis.eventchart.EventChart;
 import org.hisp.dhis.eventreport.EventReport;
+import org.hisp.dhis.fieldfilter.Defaults;
 import org.hisp.dhis.interpretation.Interpretation;
 import org.hisp.dhis.interpretation.InterpretationComment;
 import org.hisp.dhis.interpretation.InterpretationService;
@@ -43,9 +45,16 @@ import org.hisp.dhis.mapping.Map;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.period.Period;
 import org.hisp.dhis.period.PeriodType;
+import org.hisp.dhis.query.Disjunction;
+import org.hisp.dhis.query.Order;
+import org.hisp.dhis.query.Query;
+import org.hisp.dhis.query.QueryParserException;
+import org.hisp.dhis.query.Restrictions;
 import org.hisp.dhis.reporttable.ReportTable;
 import org.hisp.dhis.schema.descriptors.InterpretationSchemaDescriptor;
 import org.hisp.dhis.user.User;
+import org.hisp.dhis.webapi.webdomain.WebMetadata;
+import org.hisp.dhis.webapi.webdomain.WebOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.AccessDeniedException;
@@ -59,7 +68,11 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
+import java.util.ListIterator;
 
 /**
  * @author Lars Helge Overland
@@ -75,6 +88,56 @@ public class InterpretationController
     @Autowired
     private IdentifiableObjectManager idObjectManager;
 
+    @Override
+    @SuppressWarnings( "unchecked" )
+    protected List<Interpretation> getEntityList( WebMetadata metadata, WebOptions options, List<String> filters,
+        List<Order> orders )
+        throws QueryParserException
+    {
+
+        // If mentions:in:[username] in filters -> Remove from filters and add
+        // as disjunction
+        List<String> mentions = new ArrayList<String>();
+        ListIterator<String> filterIterator = filters.listIterator();
+        while ( filterIterator.hasNext() )
+        {
+            String[] filterSplit = filterIterator.next().split( ":" );
+            if ( filterSplit[1].equals( "in" ) && filterSplit[0].equals( "mentions" ) )
+            {
+                mentions.add( filterSplit[2] );
+                filterIterator.remove();
+            }
+        }
+
+        Query query = queryService.getQueryFromUrl( getEntityClass(), filters, orders, options.getRootJunction() );
+        query.setDefaultOrder();
+        query.setDefaults( Defaults.valueOf( options.get( "defaults", DEFAULTS ) ) );
+
+        // If mentions:in:[username] in filters -> Add as disjunction including
+        // interpretation mentions and comments mentions
+        for ( String m : mentions )
+        {
+            Disjunction disjunction = query.disjunction();
+            String[] split = m.substring( 1, m.length() - 1 ).split( "," );
+            List<String> items = Lists.newArrayList( split );
+            disjunction.add( Restrictions.in( "mentions.username", items ) );
+            disjunction.add( Restrictions.in( "comments.mentions.username", items ) );
+            query.add( disjunction );
+        }
+
+        List<Interpretation> entityList;
+        if ( options.getOptions().containsKey( "query" ) )
+        {
+            entityList = Lists.newArrayList( manager.filter( getEntityClass(), options.getOptions().get( "query" ) ) );
+        }
+        else
+        {
+            entityList = (List<Interpretation>) queryService.query( query );
+        }
+        return entityList;
+
+    }
+    
     // -------------------------------------------------------------------------
     // Intepretation create
     // -------------------------------------------------------------------------
@@ -342,6 +405,8 @@ public class InterpretationController
                 }
 
                 comment.setText( content );
+                comment.setMentions( interpretationService.updateMentions( content ) );
+                interpretationService.updateInterpretation( interpretation );
             }
         }
 

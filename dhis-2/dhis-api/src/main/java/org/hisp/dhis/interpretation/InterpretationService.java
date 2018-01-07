@@ -57,7 +57,9 @@ public interface InterpretationService
     List<Interpretation> getInterpretations( int first, int max );
 
     InterpretationComment addInterpretationComment( String uid, String text );
-
+    
+    List<Mention> updateMentions(String text);
+    
     void updateCurrentUserLastChecked();
 
     long getNewInterpretationCount();
