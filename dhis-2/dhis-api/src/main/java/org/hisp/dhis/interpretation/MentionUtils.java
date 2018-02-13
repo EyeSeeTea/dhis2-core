@@ -1,4 +1,4 @@
-package org.hisp.dhis.hibernate.dialect;
+package org.hisp.dhis.interpretation;
 
 /*
  * Copyright (c) 2004-2018, University of Oslo
@@ -28,34 +28,26 @@ package org.hisp.dhis.hibernate.dialect;
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import org.hibernate.dialect.H2Dialect;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Set;
 
-import java.sql.Types;
+import org.hisp.dhis.user.User;
 
-/**
- * @author Lars Helge Overland
- */
-public class DhisH2Dialect
-    extends H2Dialect
+public class MentionUtils
 {
-
-    public DhisH2Dialect()
+    public static List<Mention> convertUsersToMentions( Set<User> users )
     {
-        registerColumnType( Types.JAVA_OBJECT, "text" );
-        registerColumnType( Types.JAVA_OBJECT, "jsonb" );
+        List<Mention> mentions = new ArrayList<Mention>();
+        for ( User user : users )
+        {
+            Mention mention = new Mention();
+            mention.setCreated( new Date() );
+            mention.setUsername( user.getUsername() );
+            mentions.add( mention );
+        }
+        return mentions;
     }
 
-    @Override
-    public String getDropSequenceString( String sequenceName )
-    {
-        // Adding the "if exists" clause to avoid warnings
-        return "drop sequence if exists " + sequenceName;
-    }
-
-    @Override
-    public boolean dropConstraints()
-    {
-        // No need to drop constraints before dropping tables, leads to error messages
-        return false;
-    }
 }

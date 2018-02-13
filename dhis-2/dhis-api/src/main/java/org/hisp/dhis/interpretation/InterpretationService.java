@@ -31,9 +31,11 @@ package org.hisp.dhis.interpretation;
 import org.hisp.dhis.chart.Chart;
 import org.hisp.dhis.mapping.Map;
 import org.hisp.dhis.reporttable.ReportTable;
+import org.hisp.dhis.user.User;
 
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
 
 /**
  * @author Lars Helge Overland
@@ -57,7 +59,13 @@ public interface InterpretationService
     List<Interpretation> getInterpretations( int first, int max );
 
     InterpretationComment addInterpretationComment( String uid, String text );
-
+    
+    void sendNotifications( Interpretation interpretation, InterpretationComment comment,  Set<User> users);
+    
+    void updateSharingForMentions( Interpretation interpretation, Set<User> users );
+    
+    Set<User> getMentionedUsers( String text );
+    
     void updateCurrentUserLastChecked();
 
     long getNewInterpretationCount();

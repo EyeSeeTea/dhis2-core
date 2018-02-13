@@ -35,23 +35,34 @@ import org.hisp.dhis.interpretation.InterpretationComment;
 import org.hisp.dhis.interpretation.InterpretationService;
 import org.hisp.dhis.interpretation.InterpretationStore;
 import org.hisp.dhis.mapping.Map;
+import org.hisp.dhis.message.MessageService;
 import org.hisp.dhis.period.PeriodService;
 import org.hisp.dhis.reporttable.ReportTable;
+import org.hisp.dhis.security.acl.AccessStringHelper;
+import org.hisp.dhis.security.acl.AclService;
+import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.user.CurrentUserService;
 import org.hisp.dhis.user.User;
+import org.hisp.dhis.user.UserAccess;
+import org.hisp.dhis.user.UserCredentials;
 import org.hisp.dhis.user.UserService;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * @author Lars Helge Overland
  */
 @Transactional
 public class DefaultInterpretationService
-    implements InterpretationService
+    implements
+    InterpretationService
 {
     // -------------------------------------------------------------------------
     // Dependencies
@@ -84,6 +95,27 @@ public class DefaultInterpretationService
     {
         this.periodService = periodService;
     }
+    
+    private MessageService messageService;
+    
+    public void setMessageService( MessageService messageService )
+    {
+        this.messageService = messageService;
+    }
+    
+    private SystemSettingManager systemSettingManager;
+
+    public void setSystemSettingManager( SystemSettingManager systemSettingManager )
+    {
+        this.systemSettingManager = systemSettingManager;
+    }
+    
+    private AclService aclService;
+
+    public void setAclService( AclService aclService )
+    {
+        this.aclService = aclService;
+    }
 
     // -------------------------------------------------------------------------
     // InterpretationService implementation
@@ -93,7 +125,7 @@ public class DefaultInterpretationService
     public int saveInterpretation( Interpretation interpretation )
     {
         User user = currentUserService.getCurrentUser();
-
+        Set<User> users = new HashSet<>();
         if ( interpretation != null )
         {
             if ( user != null )
@@ -107,13 +139,18 @@ public class DefaultInterpretationService
             }
 
             interpretation.updateSharing();
+            users = this.getMentionedUsers( interpretation.getText() ); 
+            interpretation.setMentions(users);
+            this.updateSharingForMentions(interpretation, users);
         }
 
         interpretationStore.save( interpretation );
+        
+        this.sendNotifications(interpretation, null, users);
 
         return interpretation.getId();
     }
-
+    
     @Override
     public Interpretation getInterpretation( int id )
     {
@@ -130,7 +167,13 @@ public class DefaultInterpretationService
     public void updateInterpretation( Interpretation interpretation )
     {
         interpretation.updateSharing();
+        
+        Set<User> users = this.getMentionedUsers( interpretation.getText() );
+        interpretation.setMentions(users);
+        this.updateSharingForMentions(interpretation, users);
         interpretationStore.update( interpretation );
+        
+        this.sendNotifications(interpretation, null, users);
     }
 
     @Override
@@ -158,24 +201,96 @@ public class DefaultInterpretationService
     }
 
     @Override
+    public Set<User> getMentionedUsers( String text ){
+        Set<User> users = new HashSet<>();
+        Matcher matcher = Pattern.compile( "(?:\\s|^)@([\\w+._-]+)" ).matcher( text );
+        while ( matcher.find() )
+        {
+            String username = matcher.group(1);
+            UserCredentials userCredentials = userService.getUserCredentialsByUsername( username );
+            if (userCredentials  != null )
+            {
+                users.add( userCredentials.getUserInfo() );
+            }
+        }
+        return users;
+    }
+    
+    @Override
+    public void sendNotifications( Interpretation interpretation, InterpretationComment comment,  Set<User> users)
+    {
+        if ( interpretation != null && users.size() > 0 ) {
+            String link = systemSettingManager.getInstanceBaseUrl();
+
+            switch ( interpretation.getType() )
+            {
+                case MAP:
+                    link += "/dhis-web-mapping/index.html?id=" + interpretation.getMap().getUid() + "&interpretationid=" + interpretation.getUid();
+                    break;
+                case REPORT_TABLE:
+                    link += "/dhis-web-pivot/index.html?id=" + interpretation.getReportTable().getUid() + "&interpretationid=" + interpretation.getUid();
+                    break;
+                case CHART:
+                    link += "/dhis-web-visualizer/index.html?id=" + interpretation.getChart().getUid() + "&interpretationid=" + interpretation.getUid();
+                    break;
+                case EVENT_REPORT:
+                    link += "/dhis-web-event-reports/index.html?id=" + interpretation.getChart().getUid() + "&interpretationid=" + interpretation.getUid();
+                    break;
+                case EVENT_CHART:
+                    link += "/dhis-web-event-visualizer/index.html?id=" + interpretation.getChart().getUid() + "&interpretationid=" + interpretation.getUid();
+                    break;
+                default:
+                    break;
+            }
+
+            StringBuilder messageContent;
+            if (comment != null) {
+                messageContent = new StringBuilder( "You were mentioned in the following comment: \n\n" )
+                    .append( comment.getText() );
+            }
+            else {
+                messageContent = new StringBuilder( "You were mentioned in the following interpretation: \n\n" )
+                    .append( interpretation.getText() );
+                    
+            }
+            messageContent.append( "\n\n" ).append( "Go to " ).append( link );
+            User user = currentUserService.getCurrentUser();
+            messageService.sendMessage( messageService.createPrivateMessage( users, user.getDisplayName() + " mentioned you in DHIS2", messageContent.toString(), "Meta" ).build() );
+        }
+    }
+    
+    @Override
+    public void updateSharingForMentions( Interpretation interpretation, Set<User> users ){
+        for ( User user : users ) {
+            if (!aclService.canRead( user, interpretation.getObject() )) {
+                interpretation.getObject().getUserAccesses().add( new UserAccess(user, AccessStringHelper.READ) );    
+            }
+        }
+    }
+    
+    @Override
     public InterpretationComment addInterpretationComment( String uid, String text )
     {
         Interpretation interpretation = getInterpretation( uid );
-
         User user = currentUserService.getCurrentUser();
 
         InterpretationComment comment = new InterpretationComment( text );
         comment.setLastUpdated( new Date() );
         comment.setUid( CodeGenerator.generateUid() );
-
+        
+        Set<User> users = this.getMentionedUsers( text ); 
+        comment.setMentions( users );
+        this.updateSharingForMentions(interpretation, users);
+        
         if ( user != null )
         {
             comment.setUser( user );
         }
 
         interpretation.addComment( comment );
-
         interpretationStore.update( interpretation );
+        
+        this.sendNotifications(interpretation, comment, users);
 
         return comment;
     }
