@@ -1,10 +1,4 @@
-package org.hisp.dhis.scheduling.parameters;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
-import org.hisp.dhis.feedback.ErrorReport;
-import org.hisp.dhis.scheduling.JobParameters;
-
-import java.util.List;
+package org.hisp.dhis.common;
 
 /*
  * Copyright (c) 2004-2018, University of Oslo
@@ -34,67 +28,18 @@ import java.util.List;
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/**
- * @author Henning Håkonsen
- */
-public class SmsJobParameters
-    implements JobParameters
+import java.util.Set;
+
+import org.hisp.dhis.user.User;
+
+public interface SubscribableObject
+    extends IdentifiableObject
 {
-    private static final long serialVersionUID = -6116489359345047961L;
+  Set<String> getSubscribers();
 
-    @JsonProperty
-    private String smsSubject;
+  boolean isSubscribed();
 
-    @JsonProperty
-    private List<String> recipientsList;
+  boolean subscribe( User user );
 
-    @JsonProperty
-    private String message;
-
-    public SmsJobParameters()
-    {
-    }
-
-    public SmsJobParameters( String smsSubject, String message, List<String> recipientsList )
-    {
-        this.smsSubject = smsSubject;
-        this.recipientsList = recipientsList;
-        this.message = message;
-    }
-
-    public String getSmsSubject()
-    {
-        return smsSubject;
-    }
-
-    public void setSmsSubject( String smsSubject )
-    {
-        this.smsSubject = smsSubject;
-    }
-
-    public List<String> getRecipientsList()
-    {
-        return recipientsList;
-    }
-
-    public void setRecipientsList( List<String> recipientsList )
-    {
-        this.recipientsList = recipientsList;
-    }
-
-    public String getMessage()
-    {
-        return message;
-    }
-
-    public void setMessage( String message )
-    {
-        this.message = message;
-    }
-
-    @Override
-    public ErrorReport validate()
-    {
-        return null;
-    }
+  boolean unsubscribe( User user );
 }
