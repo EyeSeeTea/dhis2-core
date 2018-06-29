@@ -33,11 +33,14 @@ import org.hisp.dhis.DhisSpringTest;
 import org.hisp.dhis.chart.Chart;
 import org.hisp.dhis.chart.ChartService;
 import org.hisp.dhis.common.IdentifiableObjectManager;
+import org.hisp.dhis.message.MessageConversation;
+import org.hisp.dhis.message.MessageService;
 import org.hisp.dhis.mock.MockCurrentUserService;
 import org.hisp.dhis.mock.MockUserService;
 import org.hisp.dhis.security.acl.AccessStringHelper;
 import org.hisp.dhis.user.CurrentUserService;
 import org.hisp.dhis.user.User;
+import org.hisp.dhis.user.UserAccess;
 import org.hisp.dhis.user.UserGroup;
 import org.hisp.dhis.user.UserGroupAccess;
 import org.hisp.dhis.user.UserGroupService;
@@ -51,6 +54,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 
+import static org.hamcrest.CoreMatchers.containsString;
 import static org.junit.Assert.*;
 
 /**
@@ -70,6 +74,9 @@ public class InterpretationServiceTest
 
     @Autowired
     private InterpretationService interpretationService;
+
+    @Autowired
+    private MessageService messageService;
 
     @Autowired
     private IdentifiableObjectManager manager;
@@ -93,7 +100,17 @@ public class InterpretationServiceTest
     {
         userService = _userService;
     }
-    
+
+    private void setCurrentUser(User user) {
+        MockCurrentUserService currentUserServiceMock = new MockCurrentUserService( user );
+
+        setDependency( interpretationService, "currentUserService", currentUserServiceMock,
+            CurrentUserService.class );
+
+        setDependency( messageService, "currentUserService", currentUserServiceMock,
+            CurrentUserService.class );
+    }
+
     @Before
     public void beforeTest()
     {
@@ -104,8 +121,7 @@ public class InterpretationServiceTest
         userService.addUser( userB );
         userService.addUser( userC );
 
-        setDependency( interpretationService, "currentUserService", new MockCurrentUserService( userA ),
-            CurrentUserService.class );
+        setCurrentUser( userA );
         
         setDependency( interpretationService, "userService", new MockUserService( Arrays.asList(userA, userB, userC) ),
             UserService.class );
@@ -387,5 +403,32 @@ public class InterpretationServiceTest
 
         assertEquals( AccessStringHelper.READ_WRITE, interpretation.getPublicAccess() );
         assertEquals( interpretation.getUserGroupAccesses().size(), chart.getUserGroupAccesses().size() );
+    }
+
+    @Test
+    public void testMentionsOfUsersWithoutPermissions()
+    {
+        interpretationA = new Interpretation( chartA, null, "My interpretation" );
+        interpretationService.saveInterpretation( interpretationA );
+
+        // Make userC owner of the interpretation and give read permission only to userA.
+        interpretationA.setUser( userC );
+        interpretationA.setPublicAccess( AccessStringHelper.DEFAULT );
+        interpretationA.getUserAccesses().add( new UserAccess( userA, AccessStringHelper.READ ) );
+        String text = "Interpretation of chart A with Mentions @" + userA.getUsername() + " @" + userB.getUsername();
+        interpretationService.updateInterpretationText( interpretationA, text );
+
+        assertNotNull( interpretationA.getMentions() );
+        assertEquals( 2, interpretationA.getMentions().size() );
+
+        setCurrentUser( userC );
+        List<MessageConversation> conversations = messageService.getMessageConversations();
+        assertTrue( conversations.size() > 0 && conversations.get(0).getMessageCount() > 0 );
+
+        MessageConversation conversation = conversations.get(0);
+        assertEquals( "Some users with no read permission were mentioned in an interpretation",
+            conversation.getSubject());
+        assertThat(conversation.getMessages().get(0).getText(),
+            containsString("so they can access the interpretation: usernameB."));
     }
 }

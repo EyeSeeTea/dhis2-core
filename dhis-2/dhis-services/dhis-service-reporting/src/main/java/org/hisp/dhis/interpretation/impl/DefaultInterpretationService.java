@@ -60,10 +60,12 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * @author Lars Helge Overland
@@ -203,11 +205,11 @@ public class DefaultInterpretationService
     public void updateInterpretationText( Interpretation interpretation, String text )
     {
         interpretation.setText( text );
-        updateInterpretation( interpretation );
         notifySubscribers( interpretation, null, NotificationType.INTERPRETATION_UPDATE );
         Set<User> users = MentionUtils.getMentionedUsers( interpretation.getText(), userService );
         interpretation.setMentionsFromUsers( users );
         updateSharingForMentions( interpretation, users );
+        interpretationStore.update( interpretation );
         sendMentionNotifications( interpretation, null, users );
     }
 
@@ -372,15 +374,64 @@ public class DefaultInterpretationService
     @Override
     public void updateSharingForMentions( Interpretation interpretation, Set<User> users )
     {
+        Set<User> mentionedUsersWithoutPermissions = new HashSet<>();
+        User currentUser = currentUserService.getCurrentUser();
+        IdentifiableObject object = interpretation.getObject();
+        boolean canCurrentUserUpdateInterpretation = aclService.canUpdate( currentUser, interpretation );
+        boolean canCurrentUserUpdateObject = aclService.canUpdate( currentUser, object );
+
         for ( User user : users )
         {
-            if ( !aclService.canRead( user, interpretation.getObject() ) )
+            if ( !aclService.canRead( user, interpretation ) )
             {
-                interpretation.getObject().getUserAccesses().add( new UserAccess( user, AccessStringHelper.READ ) );
+                if ( canCurrentUserUpdateInterpretation )
+                {
+                    interpretation.getUserAccesses().add( new UserAccess( user, AccessStringHelper.READ ) );
+                }
+                else
+                {
+                    mentionedUsersWithoutPermissions.add( user );
+                }
+            }
+
+            if ( !aclService.canRead( user, object ) )
+            {
+                if ( canCurrentUserUpdateObject )
+                {
+                    object.getUserAccesses().add( new UserAccess( user, AccessStringHelper.READ ) );
+                }
+                else
+                {
+                    mentionedUsersWithoutPermissions.add( user );
+                }
             }
         }
+
+        if ( !mentionedUsersWithoutPermissions.isEmpty() )
+        {
+            notifyMentionsWithoutUserPermissions( interpretation, mentionedUsersWithoutPermissions );
+        }
     }
-    
+
+    private void notifyMentionsWithoutUserPermissions( Interpretation interpretation, Set<User> usersAdded )
+    {
+        I18n i18n = i18nManager.getI18n();
+        String subject = i18n.getString( "mentions_without_permissions" );
+        String usernames = usersAdded.stream().map( User::getUsername ).collect( Collectors.joining( ", " ) );
+        String body = String.join( "\n\n", Arrays.asList(
+            String.format( "%s %s %s:",
+                i18n.getString( "notification_user" ),
+                currentUserService.getCurrentUser().getUsername(),
+                i18n.getString( "mentioned_users_without_permissions" )
+            ),
+            getInterpretationLink( interpretation ),
+            String.format( "%s: %s." , i18n.getString( "users_mentioned" ), usernames )
+        ) );
+        Collection<User> recipients = Arrays.asList( interpretation.getUser() );
+
+        messageService.sendMessage( messageService.createSystemMessage( recipients, subject, body ).build() );
+    }
+
     @Override
     public InterpretationComment addInterpretationComment( String uid, String text )
     {
