@@ -142,12 +142,10 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
 
   @Override
   public List<UserAccountExpiryInfo> getExpiringUserAccounts(int inDays) {
-    Date expiryLookAheadDate =
-        Date.from(LocalDate.now().plusDays(inDays).atStartOfDay(systemDefault()).toInstant());
-    String hql =
-        "select new org.hisp.dhis.user.UserAccountExpiryInfo(u.username, u.email, u.accountExpiry) "
-            + "from User u "
-            + "where u.email is not null and u.disabled = false and u.accountExpiry <= :expiryLookAheadDate";
+    Date expiryLookAheadDate = Date.from(LocalDate.now().plusDays(inDays).atStartOfDay(systemDefault()).toInstant());
+    String hql = "select new org.hisp.dhis.user.UserAccountExpiryInfo(u.username, u.email, u.accountExpiry) "
+        + "from User u "
+        + "where u.email is not null and u.disabled = false and u.accountExpiry <= :expiryLookAheadDate";
     return getSession()
         .createQuery(hql, UserAccountExpiryInfo.class)
         .setParameter("expiryLookAheadDate", expiryLookAheadDate)
@@ -189,12 +187,11 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
       Schema userSchema = schemaService.getSchema(User.class);
       convertedOrder = QueryUtils.convertOrderStrings(orders, userSchema);
 
-      hql =
-          Stream.of(
-                  "select distinct u",
-                  JpaQueryUtils.createSelectOrderExpression(convertedOrder, "u"))
-              .filter(Objects::nonNull)
-              .collect(Collectors.joining(","));
+      hql = Stream.of(
+          "select distinct u",
+          JpaQueryUtils.createSelectOrderExpression(convertedOrder, "u"))
+          .filter(Objects::nonNull)
+          .collect(Collectors.joining(","));
       hql += " ";
     }
 
@@ -207,12 +204,11 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
     }
 
     if (!params.getOrganisationUnits().isEmpty()) {
-      String opProperty =
-          Map.of(
-                  UserOrgUnitType.DATA_CAPTURE, "organisationUnits",
-                  UserOrgUnitType.DATA_OUTPUT, "dataViewOrganisationUnits",
-                  UserOrgUnitType.TEI_SEARCH, "teiSearchOrganisationUnits")
-              .getOrDefault(params.getOrgUnitBoundary(), "organisationUnits");
+      String opProperty = Map.of(
+          UserOrgUnitType.DATA_CAPTURE, "organisationUnits",
+          UserOrgUnitType.DATA_OUTPUT, "dataViewOrganisationUnits",
+          UserOrgUnitType.TEI_SEARCH, "teiSearchOrganisationUnits")
+          .getOrDefault(params.getOrgUnitBoundary(), "organisationUnits");
       hql += "left join u." + opProperty + " ou ";
 
       if (params.isIncludeOrgUnitChildren()) {
@@ -241,12 +237,11 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
     }
 
     if (params.getQuery() != null) {
-      hql +=
-          hlp.whereAnd()
-              + " ("
-              + "concat(lower(u.firstName),' ',lower(u.surname)) like :key "
-              + "or lower(u.email) like :key "
-              + "or lower(u.username) like :key) ";
+      hql += hlp.whereAnd()
+          + " ("
+          + "concat(lower(u.firstName),' ',lower(u.surname)) like :key "
+          + "or lower(u.email) like :key "
+          + "or lower(u.username) like :key) ";
     }
 
     if (params.getPhoneNumber() != null) {
@@ -258,26 +253,24 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
     }
 
     if (params.isAuthSubset() && params.getUser() != null) {
-      hql +=
-          hlp.whereAnd()
-              + " not exists ("
-              + "select uc2 from User uc2 "
-              + "inner join uc2.userRoles ag2 "
-              + "inner join ag2.authorities a "
-              + "where uc2.id = u.id "
-              + "and a not in (:auths) ) ";
+      hql += hlp.whereAnd()
+          + " not exists ("
+          + "select uc2 from User uc2 "
+          + "inner join uc2.userRoles ag2 "
+          + "inner join ag2.authorities a "
+          + "where uc2.id = u.id "
+          + "and a not in (:auths) ) ";
     }
 
     // TODO handle users with no user roles
 
     if (params.isDisjointRoles() && params.getUser() != null) {
-      hql +=
-          hlp.whereAnd()
-              + " not exists ("
-              + "select uc3 from User uc3 "
-              + "inner join uc3.userRoles ag3 "
-              + "where uc3.id = u.id "
-              + "and ag3.id in (:roles) ) ";
+      hql += hlp.whereAnd()
+          + " not exists ("
+          + "select uc3 from User uc3 "
+          + "inner join uc3.userRoles ag3 "
+          + "where uc3.id = u.id "
+          + "and ag3.id in (:roles) ) ";
     }
 
     if (params.getLastLogin() != null) {
@@ -301,12 +294,11 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
     }
 
     if (UserInvitationStatus.EXPIRED.equals(params.getInvitationStatus())) {
-      hql +=
-          hlp.whereAnd()
-              + " u.invitation = true "
-              + "and u.restoreToken is not null "
-              + "and u.restoreExpiry is not null "
-              + "and u.restoreExpiry < current_timestamp() ";
+      hql += hlp.whereAnd()
+          + " u.invitation = true "
+          + "and u.restoreToken is not null "
+          + "and u.restoreExpiry is not null "
+          + "and u.restoreExpiry < current_timestamp() ";
     }
 
     if (!count) {
@@ -331,8 +323,7 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
     }
 
     if (params.isCanManage() && params.getUser() != null) {
-      Collection<Long> managedGroups =
-          IdentifiableObjectUtils.getIdentifiers(params.getUser().getManagedGroups());
+      Collection<Long> managedGroups = IdentifiableObjectUtils.getIdentifiers(params.getUser().getManagedGroups());
 
       query.setParameterList("ids", managedGroups);
     }
@@ -348,8 +339,7 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
     }
 
     if (params.isDisjointRoles() && params.getUser() != null) {
-      Collection<Long> roles =
-          IdentifiableObjectUtils.getIdentifiers(params.getUser().getUserRoles());
+      Collection<Long> roles = IdentifiableObjectUtils.getIdentifiers(params.getUser().getUserRoles());
 
       query.setParameterList("roles", roles);
     }
@@ -372,16 +362,14 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
           query.setParameter(format("ou%s", ou.getUid()), "%/" + ou.getUid() + "%");
         }
       } else {
-        Collection<Long> ouIds =
-            IdentifiableObjectUtils.getIdentifiers(params.getOrganisationUnits());
+        Collection<Long> ouIds = IdentifiableObjectUtils.getIdentifiers(params.getOrganisationUnits());
 
         query.setParameterList("ouIds", ouIds);
       }
     }
 
     if (params.hasUserGroups()) {
-      Collection<Long> userGroupIds =
-          IdentifiableObjectUtils.getIdentifiers(params.getUserGroups());
+      Collection<Long> userGroupIds = IdentifiableObjectUtils.getIdentifiers(params.getUserGroups());
 
       query.setParameterList("userGroupIds", userGroupIds);
     }
@@ -433,10 +421,9 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
       return null;
     }
 
-    String hql =
-        ignoreCase
-            ? "from User u where lower(u.username) = lower(:username)"
-            : "from User u where u.username = :username";
+    String hql = ignoreCase
+        ? "from User u where lower(u.username) = lower(:username)"
+        : "from User u where u.username = :username";
 
     TypedQuery<User> typedQuery = entityManager.createQuery(hql, User.class);
     typedQuery.setParameter("username", username);
@@ -461,22 +448,20 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
 
   @Override
   public Map<String, Optional<Locale>> findNotifiableUsersWithLastLoginBetween(Date from, Date to) {
-    String hql =
-        "select u.email, s.value "
-            + "from User u "
-            + "left outer join UserSetting s on u.id = s.user and s.name = 'keyUiLocale' "
-            + "where u.email is not null and u.disabled = false and u.lastLogin >= :from and u.lastLogin < :to";
+    String hql = "select u.email, s.value "
+        + "from User u "
+        + "left outer join UserSetting s on u.id = s.user and s.name = 'keyUiLocale' "
+        + "where u.email is not null and u.disabled = false and u.lastLogin >= :from and u.lastLogin < :to";
     return toLocaleMap(hql, from, to);
   }
 
   @Override
   public Map<String, Optional<Locale>> findNotifiableUsersWithPasswordLastUpdatedBetween(
       Date from, Date to) {
-    String hql =
-        "select u.email, s.value "
-            + "from User u "
-            + "left outer join UserSetting s on u.id = s.user and s.name = 'keyUiLocale' "
-            + "where u.email is not null and u.disabled = false and u.passwordLastUpdated >= :from and u.passwordLastUpdated < :to";
+    String hql = "select u.email, s.value "
+        + "from User u "
+        + "left outer join UserSetting s on u.id = s.user and s.name = 'keyUiLocale' "
+        + "where u.email is not null and u.disabled = false and u.passwordLastUpdated >= :from and u.passwordLastUpdated < :to";
     return toLocaleMap(hql, from, to);
   }
 
@@ -494,16 +479,14 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
 
   @Override
   public Map<String, String> getUserGroupUserEmailsByUsername(String userGroupId) {
-    String sql =
-        """
-            select u.username, u.email from userinfo u
-            where u.email is not null
-              and u.userinfoid in (select m.userid from usergroup g inner join usergroupmembers m on m.usergroupid = g.usergroupid where g.uid = :group);
-            """;
-    NativeQuery<?> emailsByUsername =
-        nativeSynchronizedQuery(sql)
-            .addSynchronizedEntityClass(UserGroup.class)
-            .setParameter("group", userGroupId);
+    String sql = """
+        select u.username, u.email from userinfo u
+        where u.email is not null
+          and u.userinfoid in (select m.userid from usergroup g inner join usergroupmembers m on m.usergroupid = g.usergroupid where g.uid = :group);
+        """;
+    NativeQuery<?> emailsByUsername = nativeSynchronizedQuery(sql)
+        .addSynchronizedEntityClass(UserGroup.class)
+        .setParameter("group", userGroupId);
     return emailsByUsername.stream()
         .collect(
             toMap(
@@ -523,9 +506,8 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
   @Override
   @CheckForNull
   public User getUserByOpenId(@Nonnull String openId) {
-    Query<User> query =
-        getQuery(
-            "from User u where u.disabled = false and u.openId = :openId order by coalesce(u.lastLogin,'0001-01-01') desc");
+    Query<User> query = getQuery(
+        "from User u where u.disabled = false and u.openId = :openId order by coalesce(u.lastLogin,'0001-01-01') desc");
     query.setParameter("openId", openId);
     List<User> list = query.getResultList();
     return list.isEmpty() ? null : list.get(0);
@@ -558,7 +540,8 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
     query.setParameter("email", email);
     List<User> list = query.getResultList();
     if (list.size() > 1) {
-      // password, but that should be changed when we have verified emails implemented.
+      // password, but that should be changed when we have verified emails
+      // implemented.
       log.warn("Multiple users found with email: {}", email);
       return null;
     }
@@ -567,11 +550,10 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
 
   @Override
   public List<User> getHasAuthority(String authority) {
-    String hql =
-        "select distinct uc2 from User uc2 "
-            + "inner join uc2.userRoles ag2 "
-            + "inner join ag2.authorities a "
-            + "where :authority in elements(a)";
+    String hql = "select distinct uc2 from User uc2 "
+        + "inner join uc2.userRoles ag2 "
+        + "inner join ag2.authorities a "
+        + "where :authority in elements(a)";
 
     Query<User> query = getQuery(hql);
     query.setParameter("authority", authority);
@@ -621,6 +603,23 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
 
       update(user, new SystemUser());
     }
+  }
+  
+  @Override
+  public User getUserByVerificationToken(String token) {
+    Query<User> query =
+        getSession()
+            .createQuery("from User u where u.emailVerificationToken like :token", User.class);
+    query.setParameter("token", token + "%");
+    return query.uniqueResult();
+  }
+
+  @Override
+  public User getUserByVerifiedEmail(String email) {
+    Query<User> query =
+        getSession().createQuery("from User u where u.verifiedEmail = :email", User.class);
+    query.setParameter("email", email);
+    return query.uniqueResult();
   }
 
   @Override

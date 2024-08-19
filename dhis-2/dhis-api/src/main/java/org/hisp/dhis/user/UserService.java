@@ -165,6 +165,8 @@ public interface UserService {
    */
   User getUserByEmail(String email);
 
+  User getUserByVerifiedEmail(String email);
+
   /**
    * Retrieves a collection of User with the given unique identifiers.
    *
@@ -863,6 +865,30 @@ public interface UserService {
   boolean canDataRead(IdentifiableObject identifiableObject);
 
   CurrentUserGroupInfo getCurrentUserGroupInfo(String userUID);
+
+  /**
+   * Generate a new email verification token for the user and set it on the user object.
+   *
+   * @param user the user
+   * @return the generated token
+   */
+  String generateAndSetNewEmailVerificationToken(User user);
+
+  /**
+   * Send email verification token to the user's email address.
+   *
+   * @param user the user
+   * @param token the verification token
+   * @param requestUrl the request URL
+   * @return true if the email was sent successfully, false otherwise
+   */
+  boolean sendEmailVerificationToken(User user, String token, String requestUrl);
+
+  boolean verifyEmail(String token);
+
+  boolean isEmailVerified(User currentUser);
+
+  User getUserByVerificationToken(String token);
 
   /**
    * Method that retrieves all {@link User}s that have an entry for the {@link OrganisationUnit} in

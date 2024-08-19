@@ -225,6 +225,10 @@ public interface UserStore extends IdentifiableObjectStore<User> {
    */
   void setActiveLinkedAccounts(@Nonnull String actingUser, @Nonnull String activeUsername);
 
+  User getUserByVerificationToken(String token);
+
+  User getUserByVerifiedEmail(String email);
+
   /**
    * Retrieves all {@link User}s that have an entry for the {@link OrganisationUnit} in the given
    * table

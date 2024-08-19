@@ -73,6 +73,7 @@ import org.hisp.dhis.common.UID;
 import org.hisp.dhis.common.UserOrgUnitType;
 import org.hisp.dhis.commons.filter.FilterUtils;
 import org.hisp.dhis.dataset.DataSet;
+import org.hisp.dhis.email.EmailResponse;
 import org.hisp.dhis.feedback.ErrorCode;
 import org.hisp.dhis.feedback.ErrorReport;
 import org.hisp.dhis.feedback.NotFoundException;
@@ -83,6 +84,7 @@ import org.hisp.dhis.i18n.locale.LocaleManager;
 import org.hisp.dhis.message.MessageSender;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.organisationunit.OrganisationUnitService;
+import org.hisp.dhis.outboundmessage.OutboundMessageResponse;
 import org.hisp.dhis.period.Cal;
 import org.hisp.dhis.period.PeriodType;
 import org.hisp.dhis.security.PasswordManager;
@@ -112,6 +114,8 @@ import org.springframework.web.client.RestTemplate;
 @Lazy
 @Service("org.hisp.dhis.user.UserService")
 public class DefaultUserService implements UserService {
+  private static final long EMAIL_TOKEN_EXPIRY_MILLIS = 3600000;
+
   private final UserStore userStore;
   private final UserGroupService userGroupService;
   private final UserRoleStore userRoleStore;
@@ -339,9 +343,8 @@ public class DefaultUserService implements UserService {
   }
 
   private void handleUserQueryParams(UserQueryParams params) {
-    boolean canSeeOwnRoles =
-        params.isCanSeeOwnRoles()
-            || systemSettingManager.getBoolSetting(SettingKey.CAN_GRANT_OWN_USER_ROLES);
+    boolean canSeeOwnRoles = params.isCanSeeOwnRoles()
+        || systemSettingManager.getBoolSetting(SettingKey.CAN_GRANT_OWN_USER_ROLES);
     params.setDisjointRoles(!canSeeOwnRoles);
 
     if (!params.hasUser()) {
@@ -546,8 +549,7 @@ public class DefaultUserService implements UserService {
   public void canIssueFilter(Collection<UserRole> userRoles) {
     User user = getUserByUsername(CurrentUserUtil.getCurrentUsername());
 
-    boolean canGrantOwnUserRoles =
-        systemSettingManager.getBoolSetting(SettingKey.CAN_GRANT_OWN_USER_ROLES);
+    boolean canGrantOwnUserRoles = systemSettingManager.getBoolSetting(SettingKey.CAN_GRANT_OWN_USER_ROLES);
 
     FilterUtils.filter(userRoles, new UserRoleCanIssueFilter(user, canGrantOwnUserRoles));
   }
@@ -573,9 +575,8 @@ public class DefaultUserService implements UserService {
       // authentication
     }
 
-    boolean isNewPassword =
-        StringUtils.isBlank(user.getPassword())
-            || !passwordManager.matches(rawPassword, user.getPassword());
+    boolean isNewPassword = StringUtils.isBlank(user.getPassword())
+        || !passwordManager.matches(rawPassword, user.getPassword());
 
     if (isNewPassword) {
       user.setPasswordLastUpdated(new Date());
@@ -731,13 +732,11 @@ public class DefaultUserService implements UserService {
   private void checkHasAccessToUserRoles(User user, User currentUser, List<ErrorReport> errors) {
     Set<UserRole> userRoles = user.getUserRoles();
 
-    boolean canGrantOwnUserRoles =
-        systemSettingManager.getBoolSetting(SettingKey.CAN_GRANT_OWN_USER_ROLES);
+    boolean canGrantOwnUserRoles = systemSettingManager.getBoolSetting(SettingKey.CAN_GRANT_OWN_USER_ROLES);
 
     if (userRoles != null) {
-      List<UserRole> roles =
-          userRoleStore.getByUid(
-              userRoles.stream().map(IdentifiableObject::getUid).collect(Collectors.toList()));
+      List<UserRole> roles = userRoleStore.getByUid(
+          userRoles.stream().map(IdentifiableObject::getUid).collect(Collectors.toList()));
 
       roles.forEach(
           ur -> {
@@ -937,12 +936,12 @@ public class DefaultUserService implements UserService {
 
     Map<String, Serializable> userSettings = userSettingService.getUserSettingsAsMap(user);
 
-    List<String> organisationUnitsUidsByUser =
-        organisationUnitService.getOrganisationUnitsUidsByUser(user.getUsername());
-    List<String> searchOrganisationUnitsUidsByUser =
-        organisationUnitService.getSearchOrganisationUnitsUidsByUser(user.getUsername());
-    List<String> dataViewOrganisationUnitsUidsByUser =
-        organisationUnitService.getDataViewOrganisationUnitsUidsByUser(user.getUsername());
+    List<String> organisationUnitsUidsByUser = organisationUnitService
+        .getOrganisationUnitsUidsByUser(user.getUsername());
+    List<String> searchOrganisationUnitsUidsByUser = organisationUnitService
+        .getSearchOrganisationUnitsUidsByUser(user.getUsername());
+    List<String> dataViewOrganisationUnitsUidsByUser = organisationUnitService
+        .getDataViewOrganisationUnitsUidsByUser(user.getUsername());
 
     return UserDetails.createUserDetails(
         user,
@@ -1054,8 +1053,7 @@ public class DefaultUserService implements UserService {
   public List<UserLookup> getLinkedUserAccounts(@Nonnull User actingUser) {
     List<User> linkedUserAccounts = userStore.getLinkedUserAccounts(actingUser);
 
-    List<UserLookup> userLookups =
-        linkedUserAccounts.stream().map(UserLookup::fromUser).collect(Collectors.toList());
+    List<UserLookup> userLookups = linkedUserAccounts.stream().map(UserLookup::fromUser).collect(Collectors.toList());
 
     for (int i = 0; i < linkedUserAccounts.size(); i++) {
       userLookups
@@ -1142,13 +1140,11 @@ public class DefaultUserService implements UserService {
 
     vars.put("welcomeMessage", persistedUser.getWelcomeMessage());
 
-    I18n i18n =
-        i18nManager.getI18n(
-            ObjectUtils.firstNonNull(
-                (Locale)
-                    userSettingService.getUserSetting(
-                        UserSettingKey.UI_LOCALE, persistedUser.getUsername()),
-                LocaleManager.DEFAULT_LOCALE));
+    I18n i18n = i18nManager.getI18n(
+        ObjectUtils.firstNonNull(
+            (Locale) userSettingService.getUserSetting(
+                UserSettingKey.UI_LOCALE, persistedUser.getUsername()),
+            LocaleManager.DEFAULT_LOCALE));
 
     vars.put("i18n", i18n);
 
@@ -1184,11 +1180,10 @@ public class DefaultUserService implements UserService {
 
     String idToken = CodeGenerator.getRandomSecureToken();
 
-    Date expiry =
-        new Cal()
-            .now()
-            .add(restoreType.getExpiryIntervalType(), restoreType.getExpiryIntervalCount())
-            .time();
+    Date expiry = new Cal()
+        .now()
+        .add(restoreType.getExpiryIntervalType(), restoreType.getExpiryIntervalCount())
+        .time();
 
     // The id token is not hashed since we use it for lookup.
     user.setIdToken(idToken);
@@ -1204,8 +1199,7 @@ public class DefaultUserService implements UserService {
 
   @Override
   public String[] decodeEncodedTokens(String encodedTokens) {
-    String decodedEmailToken =
-        new String(Base64.getUrlDecoder().decode(encodedTokens), StandardCharsets.UTF_8);
+    String decodedEmailToken = new String(Base64.getUrlDecoder().decode(encodedTokens), StandardCharsets.UTF_8);
 
     return decodedEmailToken.split(":");
   }
@@ -1346,11 +1340,13 @@ public class DefaultUserService implements UserService {
   }
 
   /**
-   * Verifies all parameters needed for account restore and checks validity of the user supplied
-   * token and code. If the restore cannot be verified a descriptive error string is returned.
+   * Verifies all parameters needed for account restore and checks validity of the
+   * user supplied
+   * token and code. If the restore cannot be verified a descriptive error string
+   * is returned.
    *
-   * @param user the user.
-   * @param token the user supplied token.
+   * @param user        the user.
+   * @param token       the user supplied token.
    * @param restoreType the restore type.
    * @return null if restore is valid, a descriptive error string otherwise.
    */
@@ -1517,6 +1513,88 @@ public class DefaultUserService implements UserService {
   public boolean canDataRead(IdentifiableObject identifiableObject) {
     return !aclService.isSupported(identifiableObject)
         || aclService.canDataRead(CurrentUserUtil.getCurrentUserDetails(), identifiableObject);
+  }
+
+  @Override
+  @Transactional
+  public String generateAndSetNewEmailVerificationToken(User user) {
+    String token = CodeGenerator.getRandomSecureToken();
+    String encodedToken = token + "|" + (System.currentTimeMillis() + EMAIL_TOKEN_EXPIRY_MILLIS);
+    user.setEmailVerificationToken(encodedToken);
+    updateUser(user);
+    return token;
+  }
+
+  @Override
+  public boolean sendEmailVerificationToken(User user, String token, String requestUrl) {
+    String applicationTitle = systemSettingManager.getStringSetting(SettingKey.APPLICATION_TITLE);
+    if (applicationTitle == null || applicationTitle.isEmpty()) {
+      applicationTitle = DEFAULT_APPLICATION_TITLE;
+    }
+
+    Map<String, Object> vars = new HashMap<>();
+    vars.put("applicationTitle", applicationTitle);
+    vars.put("requestUrl", requestUrl + "/api/account/verifyEmail");
+    vars.put("token", token);
+    vars.put("username", user.getUsername());
+    vars.put("email", user.getEmail());
+    I18n i18n = i18nManager.getI18n(
+        ObjectUtils.firstNonNull(
+            (Locale) userSettingService.getUserSetting(UserSettingKey.UI_LOCALE, user.getUsername()),
+            LocaleManager.DEFAULT_LOCALE));
+    vars.put("i18n", i18n);
+
+    VelocityManager vm = new VelocityManager();
+    String messageBody = vm.render(vars, "verify_email_body_template_" + "v1");
+    String messageSubject = i18n.getString("verify_email_subject");
+
+    OutboundMessageResponse status = emailMessageSender.sendMessage(messageSubject, messageBody, null, null,
+        Set.of(user), true);
+
+    return status.getResponseObject() == EmailResponse.SENT;
+  }
+
+  @Override
+  @Transactional
+  public boolean verifyEmail(String token) {
+    User user = getUserByVerificationToken(token);
+    if (user == null) {
+      return false;
+    }
+    String[] tokenParts = user.getEmailVerificationToken().split("\\|");
+    if (tokenParts.length != 2) {
+      return false;
+    }
+    if (System.currentTimeMillis() > Long.parseLong(tokenParts[1])) {
+      return false;
+    }
+    // Someone else could have verified the same email with another account in the
+    // meantime
+    if (getUserByVerifiedEmail(user.getEmail()) != null) {
+      return false;
+    }
+
+    user.setEmailVerificationToken(null);
+    user.setVerifiedEmail(user.getEmail());
+    updateUser(user);
+    return true;
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public User getUserByVerificationToken(String token) {
+    return userStore.getUserByVerificationToken(token);
+  }
+
+  @Override
+  public boolean isEmailVerified(User user) {
+    return user.getEmail().equals(user.getVerifiedEmail());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public User getUserByVerifiedEmail(String email) {
+    return userStore.getUserByVerifiedEmail(email);
   }
 
   @Override
