@@ -39,11 +39,11 @@ import java.util.Set;
 import org.hisp.dhis.jsontree.JsonList;
 import org.hisp.dhis.jsontree.JsonMixed;
 import org.hisp.dhis.jsontree.JsonObject;
+import org.hisp.dhis.message.FakeMessageSender;
 import org.hisp.dhis.message.MessageSender;
 import org.hisp.dhis.outboundmessage.OutboundMessage;
 import org.hisp.dhis.setting.SettingKey;
 import org.hisp.dhis.setting.SystemSettingManager;
-import org.hisp.dhis.message.FakeMessageSender;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.web.HttpStatus;
 import org.hisp.dhis.webapi.DhisControllerIntegrationTest;
@@ -225,6 +225,9 @@ class AccountControllerTest extends DhisControllerIntegrationTest {
 
   @Test
   void testVerifyEmailWithTokenTwice() {
+    systemSettingManager.saveSystemSetting(SettingKey.EMAIL_HOST_NAME, "mail.example.com");
+    systemSettingManager.saveSystemSetting(SettingKey.EMAIL_USERNAME, "mailer");
+
     User user = switchToNewUser("kent");
 
     String emailAddress = user.getEmail();
@@ -242,6 +245,9 @@ class AccountControllerTest extends DhisControllerIntegrationTest {
 
   @Test
   void testSendEmailVerification() {
+    systemSettingManager.saveSystemSetting(SettingKey.EMAIL_HOST_NAME, "mail.example.com");
+    systemSettingManager.saveSystemSetting(SettingKey.EMAIL_USERNAME, "mailer");
+
     User user = switchToNewUser("clark");
 
     String emailAddress = user.getEmail();
@@ -256,6 +262,9 @@ class AccountControllerTest extends DhisControllerIntegrationTest {
 
   @Test
   void testVerifyEmailWithToken() {
+    systemSettingManager.saveSystemSetting(SettingKey.EMAIL_HOST_NAME, "mail.example.com");
+    systemSettingManager.saveSystemSetting(SettingKey.EMAIL_USERNAME, "mailer");
+
     User user = switchToNewUser("lex");
 
     String emailAddress = user.getEmail();
@@ -288,7 +297,7 @@ class AccountControllerTest extends DhisControllerIntegrationTest {
         "Conflict",
         409,
         "ERROR",
-        "Email is not set",
+        "User has no email set",
         POST("/account/sendEmailVerification").content(HttpStatus.CONFLICT));
   }
 
@@ -301,7 +310,7 @@ class AccountControllerTest extends DhisControllerIntegrationTest {
         "Conflict",
         409,
         "ERROR",
-        "Email is already verified",
+        "User has already verified the email address",
         POST("/account/sendEmailVerification").content(HttpStatus.CONFLICT));
   }
 
@@ -319,12 +328,12 @@ class AccountControllerTest extends DhisControllerIntegrationTest {
         "Conflict",
         409,
         "ERROR",
-        "Email is already in use by another account",
+        "The email the user is trying to verify is already verified by another account",
         POST("/account/sendEmailVerification").content(HttpStatus.CONFLICT));
   }
 
   private void assertValidEmailVerificationToken(String token) {
-    User user = userService.getUserByVerificationToken(token);
+    User user = userService.getUserByEmailVerificationToken(token);
     assertNotNull(user);
   }
 

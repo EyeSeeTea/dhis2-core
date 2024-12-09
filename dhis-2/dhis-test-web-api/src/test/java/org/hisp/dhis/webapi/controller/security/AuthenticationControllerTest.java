@@ -27,6 +27,7 @@
  */
 package org.hisp.dhis.webapi.controller.security;
 
+import static org.hisp.dhis.common.CodeGenerator.generateSecureRandomBytes;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -34,6 +35,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.Calendar;
+import org.hisp.dhis.security.twofa.TwoFactorAuthService;
+import org.hisp.dhis.security.twofa.TwoFactorAuthService.Email2FACode;
+import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.hisp.dhis.setting.SettingKey;
 import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.user.User;
@@ -44,6 +48,7 @@ import org.hisp.dhis.webapi.json.domain.JsonLoginResponse;
 import org.hisp.dhis.webapi.json.domain.JsonWebMessage;
 import org.jboss.aerogear.security.otp.Totp;
 import org.jboss.aerogear.security.otp.api.Base32;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -52,24 +57,21 @@ import org.springframework.security.core.session.SessionRegistry;
 /**
  * @author Morten Svanæs <msvanaes@dhis2.org>
  */
+// @Slf4j
 class AuthenticationControllerTest extends DhisAuthenticationApiTest {
 
   @Autowired SystemSettingManager systemSettingManager;
   @Autowired private SessionRegistry sessionRegistry;
 
-  @Test
-  void testSuccessfulLoginWithOldUsername() {
-    User adminUser = userService.getUserByUsername("admin");
-    adminUser.setUsername("Üsername");
-    userService.updateUser(adminUser);
-
-    JsonLoginResponse response =
-        POST("/auth/login", "{'username':'Üsername','password':'district'}")
-            .content(HttpStatus.OK)
-            .as(JsonLoginResponse.class);
-
-    assertEquals("SUCCESS", response.getLoginStatus());
-    assertEquals("/dhis-web-dashboard", response.getRedirectUrl());
+  @AfterEach
+  void tearDown() {
+    systemSettingManager.saveSystemSetting(SettingKey.LOCK_MULTIPLE_FAILED_LOGINS, false);
+    systemSettingManager.saveSystemSetting(SettingKey.CREDENTIALS_EXPIRES, 0);
+    // [SMS2FA] TODO: check the following, only present in newer
+    // SystemSettingsService
+    // settingsService.clearCurrentSettings();
+    userService.invalidateAllSessions();
+    clearSecurityContext();
   }
 
   @Test
@@ -81,6 +83,20 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
 
     assertEquals("SUCCESS", response.getLoginStatus());
     assertEquals("/dhis-web-dashboard", response.getRedirectUrl());
+  }
+
+  @Test
+  void testLoginWithDeprecatedUsername() {
+    User adminUser = userService.getUserByUsername("admin");
+    adminUser.setUsername("Üsername");
+    userService.updateUser(adminUser);
+    JsonLoginResponse response =
+        POST("/auth/login", "{'username':'Üsername','password':'district'}")
+            .content(HttpStatus.OK)
+            .as(JsonLoginResponse.class);
+
+    assertEquals("SUCCESS", response.getLoginStatus());
+    assertEquals("/dhis-web-dashboard/", response.getRedirectUrl());
   }
 
   @Test
@@ -101,31 +117,11 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
   }
 
   @Test
-  void testLoginWith2FAEnrolmentUser() throws Exception {
-    User userA = createUserWithAuth("usera", "ALL");
-    injectSecurityContextUser(userA);
-
-    mvc.perform(
-            get("/2fa/qrCode")
-                .header("Authorization", "Basic dXNlcmE6ZGlzdHJpY3Q=")
-                .contentType("application/octet-stream")
-                .accept("application/octet-stream"))
-        .andExpect(status().isAccepted());
-
-    JsonLoginResponse wrong2FaCodeResponse =
-        POST("/auth/login", "{'username':'usera','password':'district'}")
-            .content(HttpStatus.OK)
-            .as(JsonLoginResponse.class);
-
-    assertEquals("REQUIRES_TWO_FACTOR_ENROLMENT", wrong2FaCodeResponse.getLoginStatus());
-    assertNull(wrong2FaCodeResponse.getRedirectUrl());
-  }
-
-  @Test
-  void testLoginWith2FAEnabledUser() {
+  void testLoginWithTOTP2FA() {
     User admin = userService.getUserByUsername("admin");
-    String secret = Base32.random();
+    String secret = Base32.encode(generateSecureRandomBytes(20));
     admin.setSecret(secret);
+    admin.setTwoFactorType(TwoFactorType.TOTP_ENABLED);
     userService.updateUser(admin);
 
     JsonLoginResponse wrong2FaCodeResponse =
@@ -136,7 +132,48 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
     assertEquals("INCORRECT_TWO_FACTOR_CODE", wrong2FaCodeResponse.getLoginStatus());
     Assertions.assertNull(wrong2FaCodeResponse.getRedirectUrl());
 
-    validateTOTP(secret);
+    Totp totp = new Totp(secret);
+    String code = totp.now();
+    loginWith2FACode(code);
+  }
+
+  @Test
+  void testLoginEmail2FA() {
+    User admin = userService.getUserByUsername("admin");
+    String emailAddress = "valid.x@email.com";
+    admin.setEmail(emailAddress);
+    admin.setVerifiedEmail(emailAddress);
+    Email2FACode email2FACode = TwoFactorAuthService.generateEmail2FACode();
+    String secret = email2FACode.encodedCode();
+    admin.setSecret(secret);
+    admin.setTwoFactorType(TwoFactorType.EMAIL_ENABLED);
+    userService.updateUser(admin);
+
+    loginWith2FACode(email2FACode.code());
+  }
+
+  @Test
+  void testLoginWith2FAEnrolmentOngoing() throws Exception {
+    User userA = createUserWithAuth("usera", "ALL");
+    injectSecurityContextUser(userA);
+
+    // This will initiate TOTP 2FA enrolment.
+    mvc.perform(
+            get("/api/2fa/qrCode")
+                .header("Authorization", "Basic dXNlcmE6ZGlzdHJpY3Q=")
+                .contentType("application/octet-stream")
+                .accept("application/octet-stream"))
+        .andExpect(status().isAccepted());
+
+    JsonLoginResponse loginResponse =
+        POST("/auth/login", "{'username':'usera','password':'district'}")
+            .content(HttpStatus.OK)
+            .as(JsonLoginResponse.class);
+
+    // This means that the user can still log in as normal while the 2FA enrolment
+    // is ongoing.
+    assertEquals("SUCCESS", loginResponse.getLoginStatus());
+    assertEquals("/dhis-web-dashboard/", loginResponse.getRedirectUrl());
   }
 
   @Test
@@ -219,7 +256,7 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
 
   @Test
   void testSessionGetsCreated() {
-    clearSecurityContext();
+    userService.invalidateAllSessions();
 
     HttpResponse response = POST("/auth/login", "{'username':'admin','password':'district'}");
     assertNotNull(response);
@@ -231,11 +268,7 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
     assertEquals("admin", actual.getUsername());
   }
 
-  // test redirect to login page when not logged in, remember url befire login...
-
-  private void validateTOTP(String secret) {
-    Totp totp = new Totp(secret);
-    String code = totp.now();
+  private void loginWith2FACode(String code) {
     JsonLoginResponse ok2FaCodeResponse =
         POST(
                 "/auth/login",

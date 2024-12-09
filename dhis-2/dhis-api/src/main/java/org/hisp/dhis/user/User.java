@@ -46,6 +46,7 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -65,6 +66,7 @@ import org.hisp.dhis.schema.PropertyType;
 import org.hisp.dhis.schema.annotation.Property;
 import org.hisp.dhis.schema.annotation.PropertyRange;
 import org.hisp.dhis.security.Authorities;
+import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.springframework.core.ResolvableType;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.GrantedAuthority;
@@ -76,8 +78,8 @@ import org.springframework.util.ClassUtils;
  */
 @JacksonXmlRootElement(localName = "user", namespace = DxfNamespaces.DXF_2_0)
 public class User extends BaseIdentifiableObject implements MetadataObject {
+  // [SMS2FA] - required by dhis-service-dxf2 dxf2/deprecated/tracker/event/AbstractEventService.java
   public static final int USERNAME_MAX_LENGTH = 255;
-
   /** Globally unique identifier for User. */
   private UUID uuid;
 
@@ -99,8 +101,9 @@ public class User extends BaseIdentifiableObject implements MetadataObject {
   /** Required. Will be stored as a hash. */
   private String password;
 
-  /** Required. Automatically set in constructor */
   private String secret;
+
+  private TwoFactorType twoFactorType;
 
   /** Date when password was changed. */
   private Date passwordLastUpdated;
@@ -438,10 +441,9 @@ public class User extends BaseIdentifiableObject implements MetadataObject {
     this.password = password;
   }
 
-  @JsonProperty
-  @JacksonXmlProperty(namespace = DxfNamespaces.DXF_2_0)
+  @JsonIgnore
   public boolean isTwoFactorEnabled() {
-    return this.secret != null && !this.secret.isEmpty();
+    return this.twoFactorType != null && this.twoFactorType.isEnabled();
   }
 
   @JsonIgnore
@@ -451,6 +453,15 @@ public class User extends BaseIdentifiableObject implements MetadataObject {
 
   public void setSecret(String secret) {
     this.secret = secret;
+  }
+
+  @JsonIgnore
+  public TwoFactorType getTwoFactorType() {
+    return this.twoFactorType == null ? TwoFactorType.NOT_ENABLED : this.twoFactorType;
+  }
+
+  public void setTwoFactorType(TwoFactorType twoFactorType) {
+    this.twoFactorType = twoFactorType;
   }
 
   @JsonProperty
@@ -1195,6 +1206,12 @@ public class User extends BaseIdentifiableObject implements MetadataObject {
   @JacksonXmlProperty(namespace = DxfNamespaces.DXF_2_0)
   public String getVerifiedEmail() {
     return this.verifiedEmail;
+  }
+
+  @JsonProperty
+  @JacksonXmlProperty(namespace = DxfNamespaces.DXF_2_0)
+  public boolean isEmailVerified() {
+    return this.getEmail() != null && Objects.equals(this.getEmail(), this.getVerifiedEmail());
   }
 
   public void setVerifiedEmail(String verifiedEmail) {

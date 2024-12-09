@@ -41,6 +41,7 @@ import org.hisp.dhis.security.spring2fa.TwoFactorWebAuthenticationDetails;
 import org.hisp.dhis.setting.SettingKey;
 import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.user.User;
+import org.hisp.dhis.user.UserDetails;
 import org.hisp.dhis.user.UserService;
 import org.hisp.dhis.webapi.controller.security.LoginResponse.STATUS;
 import org.hisp.dhis.webapi.mvc.annotation.ApiVersion;
@@ -68,6 +69,8 @@ import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.savedrequest.DefaultSavedRequest;
 import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.savedrequest.SavedRequest;
+// [SMS2FA]
+// import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -101,6 +104,10 @@ public class AuthenticationController {
   @Autowired private SessionRegistry sessionRegistry;
   @Autowired private UserService userService;
 
+  // [SMS2FA]
+  // @Autowired protected ApplicationEventPublisher eventPublisher;
+  // @Autowired private HttpSessionEventPublisher httpSessionEventPublisher;
+
   private SessionAuthenticationStrategy sessionStrategy = new NullAuthenticatedSessionStrategy();
 
   private final SecurityContextHolderStrategy securityContextHolderStrategy =
@@ -111,21 +118,23 @@ public class AuthenticationController {
 
   @PostConstruct
   public void init() {
-    if (sessionRegistry != null) {
-
-      int maxSessions =
-          Integer.parseInt(dhisConfig.getProperty((ConfigurationKey.MAX_SESSIONS_PER_USER)));
-      ConcurrentSessionControlAuthenticationStrategy concurrentStrategy =
-          new ConcurrentSessionControlAuthenticationStrategy(sessionRegistry);
-      concurrentStrategy.setMaximumSessions(maxSessions);
-
-      sessionStrategy =
-          new CompositeSessionAuthenticationStrategy(
-              List.of(
-                  concurrentStrategy,
-                  new SessionFixationProtectionStrategy(),
-                  new RegisterSessionAuthenticationStrategy(sessionRegistry)));
+    if (sessionRegistry == null) {
+      throw new IllegalStateException("SessionRegistry is null");
     }
+
+    int maxSessions =
+        Integer.parseInt(dhisConfig.getProperty((ConfigurationKey.MAX_SESSIONS_PER_USER)));
+
+    ConcurrentSessionControlAuthenticationStrategy concurrentStrategy =
+        new ConcurrentSessionControlAuthenticationStrategy(sessionRegistry);
+    concurrentStrategy.setMaximumSessions(maxSessions);
+
+    sessionStrategy =
+        new CompositeSessionAuthenticationStrategy(
+            List.of(
+                concurrentStrategy,
+                new SessionFixationProtectionStrategy(),
+                new RegisterSessionAuthenticationStrategy(sessionRegistry)));
   }
 
   @PostMapping("/login")
@@ -138,11 +147,10 @@ public class AuthenticationController {
       validateRequest(loginRequest);
 
       Authentication authenticationResult = doAuthentication(request, loginRequest);
-
       this.sessionStrategy.onAuthentication(authenticationResult, request, response);
       saveContext(request, response, authenticationResult);
 
-      String redirectUrl = getRedirectUrl(request, response);
+      String redirectUrl = getRedirectUrl(authenticationResult, request, response);
       return LoginResponse.builder().loginStatus(STATUS.SUCCESS).redirectUrl(redirectUrl).build();
 
     } catch (TwoFactorAuthenticationException e) {
@@ -199,15 +207,33 @@ public class AuthenticationController {
 
     this.securityContextHolderStrategy.setContext(context);
     this.securityContextRepository.saveContext(context, request, response);
+
+    // [SMS2FA]
+    // HttpSession session = request.getSession(true);
+    // httpSessionEventPublisher.sessionCreated(new HttpSessionEvent(session));
   }
 
-  private String getRedirectUrl(HttpServletRequest request, HttpServletResponse response) {
+  private String getRedirectUrl(
+      Authentication authentication, HttpServletRequest request, HttpServletResponse response) {
     String redirectUrl =
         request.getContextPath() + "/" + settingManager.getStringSetting(SettingKey.START_MODULE);
 
+    // Check enforce verified email, redirect to the account page if email is not verified
+    boolean enforceVerifiedEmail = settingManager.getEnforceVerifiedEmail();
+    if (enforceVerifiedEmail) {
+      UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+      if (!userDetails.isEmailVerified()) {
+        return request.getContextPath() + "/dhis-web-user-profile/#/account";
+      }
+    }
+
+    // Check for saved request, i.e. the user has tried to access a page directly before logging in.
     SavedRequest savedRequest = requestCache.getRequest(request, null);
     if (savedRequest != null) {
       DefaultSavedRequest defaultSavedRequest = (DefaultSavedRequest) savedRequest;
+      // Check saved request to avoid redirecting to non-html pages, e.g. images.
+      // If the saved request is not filtered, the user will be redirected to the saved request,
+      // otherwise the default redirect URL is used.
       if (!filterSavedRequest(defaultSavedRequest)) {
         if (defaultSavedRequest.getQueryString() != null) {
           redirectUrl =
@@ -221,6 +247,12 @@ public class AuthenticationController {
     return redirectUrl;
   }
 
+  /**
+   * Filter saved request to avoid redirecting to non-html pages.
+   *
+   * @param savedRequest
+   * @return true if the saved request should be filtered
+   */
   private boolean filterSavedRequest(DefaultSavedRequest savedRequest) {
     String requestURI = savedRequest.getRequestURI();
     return !requestURI.endsWith(".html") && !requestURI.endsWith("/") && requestURI.contains(".");

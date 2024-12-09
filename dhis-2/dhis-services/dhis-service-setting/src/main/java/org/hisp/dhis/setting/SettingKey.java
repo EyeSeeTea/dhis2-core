@@ -295,6 +295,15 @@ public enum SettingKey {
    * the app does not exist *
    */
   GLOBAL_SHELL_APP_NAME("globalShellAppName", "global-app-shell", String.class, false, false),
+
+  /** [SMS2FA] Indicates if email verification is enforced */
+  ENFORCE_VERIFIED_EMAIL("enforceVerifiedEmail", Boolean.FALSE, Boolean.class, false, false),
+
+  /** [SMS2FA] Indicates if email 2FA is enabled */
+  TWO_FACTOR_EMAIL_ENABLED("email2FAEnabled", Boolean.FALSE, Boolean.class, false, false),
+
+  /** [SMS2FA] Indicates if TOTP 2FA is enabled */
+  TWO_FACTOR_TOTP_ENABLED("totp2FAEnabled", Boolean.TRUE, Boolean.class, false, false),
   ;
 
   private final String name;
