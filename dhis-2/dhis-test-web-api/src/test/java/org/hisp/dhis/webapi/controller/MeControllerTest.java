@@ -42,11 +42,11 @@ import org.hisp.dhis.jsontree.JsonObject;
 import org.hisp.dhis.jsontree.JsonValue;
 import org.hisp.dhis.security.apikey.ApiKeyTokenGenerator;
 import org.hisp.dhis.security.apikey.ApiTokenStore;
+import org.hisp.dhis.webapi.json.domain.JsonMeDto;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.web.HttpStatus;
 import org.hisp.dhis.web.HttpStatus.Series;
 import org.hisp.dhis.webapi.DhisControllerConvenienceTest;
-import org.hisp.dhis.webapi.json.domain.JsonUser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -71,7 +71,7 @@ class MeControllerTest extends DhisControllerConvenienceTest {
   @Test
   void testGetCurrentUser() {
     switchToSuperuser();
-    assertEquals(getCurrentUser().getUid(), GET("/me").content().as(JsonUser.class).getId());
+    assertEquals(getCurrentUser().getUid(), GET("/me").content().as(JsonMeDto.class).getId());
   }
 
   @Test
@@ -91,7 +91,7 @@ class MeControllerTest extends DhisControllerConvenienceTest {
   @Test
   void testUpdateCurrentUser() {
     assertSeries(Series.SUCCESSFUL, PUT("/me", "{'surname':'Lars'}"));
-    assertEquals("Lars", GET("/me").content().as(JsonUser.class).getSurname());
+    assertEquals("Lars", GET("/me").content().as(JsonMeDto.class).getSurname());
   }
 
   @Test
@@ -100,6 +100,11 @@ class MeControllerTest extends DhisControllerConvenienceTest {
     // with no authorities
     switchToNewUser("Kalle");
     assertFalse(GET("/me/authorities/missing").content(HttpStatus.OK).booleanValue());
+  }
+
+  @Test
+  void testGetEmailVerifiedProperty() {
+    assertFalse(GET("/me").content().as(JsonMeDto.class).getEmailVerified());
   }
 
   @Test
@@ -271,4 +276,17 @@ class MeControllerTest extends DhisControllerConvenienceTest {
 
     assertTrue(id.exists());
   }
+
+  // [SMS2FA] disabled because we don't have AttributeValues
+  // @Test
+  // void testGetCurrentUserAttributeValues() {
+  //   String currentUsername = CurrentUserUtil.getCurrentUsername();
+  //   User userByUsername = userService.getUserByUsername(currentUsername);
+  //   userByUsername.setAttributeValues(
+  //       AttributeValues.of("{\"myattribute\": {\"value\": \"myvalue\"}}"));
+  //   userService.updateUser(userByUsername);
+
+  //   assertEquals(
+  //       "myvalue", GET("/me").content().as(JsonMeDto.class).getAttributeValues().get(0).getValue());
+  // }
 }

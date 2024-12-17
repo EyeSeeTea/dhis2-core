@@ -79,6 +79,7 @@ public class MeDto {
     this.access = user.getAccess();
     this.name = user.getName();
     this.email = user.getEmail();
+    this.emailVerified = user.isEmailVerified();
     this.phoneNumber = user.getPhoneNumber();
     this.introduction = user.getIntroduction();
     this.birthday = user.getBirthday();
@@ -150,6 +151,8 @@ public class MeDto {
   @JsonProperty() private String name;
 
   @JsonProperty() private String email;
+
+  @JsonProperty private boolean emailVerified;
 
   @JsonProperty() private String phoneNumber;
 
