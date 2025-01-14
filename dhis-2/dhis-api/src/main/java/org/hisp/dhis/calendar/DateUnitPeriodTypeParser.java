@@ -133,7 +133,7 @@ public class DateUnitPeriodTypeParser implements PeriodTypeParser, Serializable
             WeeklyAbstractPeriodType periodType = (WeeklyAbstractPeriodType) PeriodType
                 .getByNameIgnoreCase( dateUnitType.getName() );
 
-            if ( periodType == null || week < 1 || week > calendar.weeksInYear( year ) )
+            if ( periodType == null || week < 1 || week > calendar.weeksInYear( year ) + 1 )
             {
                 return null;
             }
