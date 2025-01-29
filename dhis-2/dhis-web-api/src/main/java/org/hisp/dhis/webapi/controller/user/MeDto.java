@@ -40,6 +40,7 @@ import org.hisp.dhis.fileresource.FileResource;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.security.acl.Access;
 import org.hisp.dhis.security.apikey.ApiToken;
+import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.hisp.dhis.translation.Translation;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserCredentialsDto;
@@ -80,6 +81,7 @@ public class MeDto {
     this.name = user.getName();
     this.email = user.getEmail();
     this.emailVerified = user.isEmailVerified();
+    this.twoFactorType = user.getTwoFactorType();
     this.phoneNumber = user.getPhoneNumber();
     this.introduction = user.getIntroduction();
     this.birthday = user.getBirthday();
@@ -91,9 +93,9 @@ public class MeDto {
     this.skype = user.getSkype();
     this.telegram = user.getTelegram();
     this.twitter = user.getTwitter();
+
     this.userRoles = user.getUserRoles();
     this.userCredentials = null;
-
     this.authorities = new ArrayList<>(user.getAllAuthorities());
 
     this.settings = settings;
@@ -152,7 +154,7 @@ public class MeDto {
 
   @JsonProperty() private String email;
 
-  @JsonProperty private boolean emailVerified;
+  @JsonProperty() private boolean emailVerified;
 
   @JsonProperty() private String phoneNumber;
 
@@ -191,6 +193,8 @@ public class MeDto {
   @JsonProperty() private UserCredentialsDto userCredentials;
 
   @JsonProperty() private List<ApiToken> patTokens;
+
+  @JsonProperty() private TwoFactorType twoFactorType;
 
   protected void setUserCredentials(UserCredentialsDto userCredentialsDto) {
     this.userCredentials = userCredentialsDto;
