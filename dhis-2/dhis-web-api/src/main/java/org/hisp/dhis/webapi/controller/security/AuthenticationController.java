@@ -219,7 +219,7 @@ public class AuthenticationController {
         request.getContextPath() + "/" + settingManager.getStringSetting(SettingKey.START_MODULE);
 
     // Check enforce verified email, redirect to the profile page if email is not verified
-    boolean enforceVerifiedEmail = settingsProvider.getCurrentSettings().getEnforceVerifiedEmail();
+    boolean enforceVerifiedEmail = settingManager.getEnforceVerifiedEmail();
     if (enforceVerifiedEmail) {
       UserDetails userDetails = (UserDetails) authentication.getPrincipal();
       if (!userDetails.isEmailVerified()) {

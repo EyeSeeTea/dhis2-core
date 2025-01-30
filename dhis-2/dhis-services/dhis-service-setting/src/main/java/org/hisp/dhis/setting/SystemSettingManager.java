@@ -227,13 +227,4 @@ public interface SystemSettingManager {
     return getBooleanSetting(SettingKey.ENFORCE_VERIFIED_EMAIL);
   }
 
-  // [SMS2FA]
-  default boolean getEmail2FAEnabled() {
-    return getBooleanSetting(SettingKey.TWO_FACTOR_EMAIL_ENABLED);
-  }
-
-  // [SMS2FA]
-  default boolean getTOTP2FAEnabled() {
-    return getBooleanSetting(SettingKey.TWO_FACTOR_TOTP_ENABLED);
-  }
 }
