@@ -77,6 +77,7 @@ import org.hisp.dhis.security.acl.Access;
 import org.hisp.dhis.security.acl.AclService;
 import org.hisp.dhis.security.apikey.ApiToken;
 import org.hisp.dhis.security.apikey.ApiTokenService;
+import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.hisp.dhis.system.util.ValidationUtils;
 import org.hisp.dhis.user.CredentialsInfo;
 import org.hisp.dhis.user.CurrentUser;
@@ -241,6 +242,15 @@ public class MeController {
 
     // TODO: To remove when we remove old UserCredentials compatibility
     populateUserCredentialsDtoFields(user);
+
+    if (currentUser.getTwoFactorType() != null
+        && currentUser.getTwoFactorType().equals(TwoFactorType.EMAIL_ENABLED)
+        && currentUser.isEmailVerified()
+        && user.getEmail() != null
+        && !currentUser.getVerifiedEmail().equals(user.getEmail())) {
+      throw new ConflictException(
+          "Email address cannot be changed, when email-based 2FA is enabled, please disable 2FA first");
+    }
 
     merge(currentUser, user);
 
