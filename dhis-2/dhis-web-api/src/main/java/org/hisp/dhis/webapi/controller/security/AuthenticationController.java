@@ -31,6 +31,8 @@ import java.util.List;
 import javax.annotation.PostConstruct;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+import javax.servlet.http.HttpSessionEvent;
 import org.hisp.dhis.common.DhisApiVersion;
 import org.hisp.dhis.common.OpenApi;
 import org.hisp.dhis.external.conf.ConfigurationKey;
@@ -38,6 +40,7 @@ import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.security.spring2fa.TwoFactorAuthenticationEnrolmentException;
 import org.hisp.dhis.security.spring2fa.TwoFactorAuthenticationException;
 import org.hisp.dhis.security.spring2fa.TwoFactorWebAuthenticationDetails;
+import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.hisp.dhis.setting.SettingKey;
 import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.user.User;
@@ -46,6 +49,7 @@ import org.hisp.dhis.user.UserService;
 import org.hisp.dhis.webapi.controller.security.LoginResponse.STATUS;
 import org.hisp.dhis.webapi.mvc.annotation.ApiVersion;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.authentication.AccountExpiredException;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -53,6 +57,7 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.CredentialsExpiredException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
+import org.springframework.security.authentication.event.InteractiveAuthenticationSuccessEvent;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -69,8 +74,7 @@ import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.savedrequest.DefaultSavedRequest;
 import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.security.web.savedrequest.SavedRequest;
-// [SMS2FA]
-// import org.springframework.security.web.session.HttpSessionEventPublisher;
+import org.springframework.security.web.session.HttpSessionEventPublisher;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -104,9 +108,8 @@ public class AuthenticationController {
   @Autowired private SessionRegistry sessionRegistry;
   @Autowired private UserService userService;
 
-  // [SMS2FA]
-  // @Autowired protected ApplicationEventPublisher eventPublisher;
-  // @Autowired private HttpSessionEventPublisher httpSessionEventPublisher;
+  @Autowired protected ApplicationEventPublisher eventPublisher;
+  @Autowired private HttpSessionEventPublisher httpSessionEventPublisher;
 
   private SessionAuthenticationStrategy sessionStrategy = new NullAuthenticatedSessionStrategy();
 
@@ -151,10 +154,20 @@ public class AuthenticationController {
       saveContext(request, response, authenticationResult);
 
       String redirectUrl = getRedirectUrl(authenticationResult, request, response);
+
+      if (this.eventPublisher != null) {
+        this.eventPublisher.publishEvent(
+            new InteractiveAuthenticationSuccessEvent(authenticationResult, this.getClass()));
+      }
+
       return LoginResponse.builder().loginStatus(STATUS.SUCCESS).redirectUrl(redirectUrl).build();
 
     } catch (TwoFactorAuthenticationException e) {
-      return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE).build();
+      TwoFactorType twoFactorType = e.getType();
+      if (twoFactorType == TwoFactorType.EMAIL_ENABLED) {
+        return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_EMAIL).build();
+      }
+      return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_TOTP).build();
     } catch (TwoFactorAuthenticationEnrolmentException e) {
       return LoginResponse.builder().loginStatus(STATUS.REQUIRES_TWO_FACTOR_ENROLMENT).build();
 
@@ -208,15 +221,19 @@ public class AuthenticationController {
     this.securityContextHolderStrategy.setContext(context);
     this.securityContextRepository.saveContext(context, request, response);
 
-    // [SMS2FA]
-    // HttpSession session = request.getSession(true);
-    // httpSessionEventPublisher.sessionCreated(new HttpSessionEvent(session));
+    HttpSession session = request.getSession(true);
+    httpSessionEventPublisher.sessionCreated(new HttpSessionEvent(session));
   }
 
   private String getRedirectUrl(
       Authentication authentication, HttpServletRequest request, HttpServletResponse response) {
+    // Default redirect URL
     String redirectUrl =
         request.getContextPath() + "/" + settingManager.getStringSetting(SettingKey.START_MODULE);
+
+    if (!redirectUrl.endsWith("/")) {
+      redirectUrl += "/";
+    }
 
     // Check enforce verified email, redirect to the profile page if email is not verified
     boolean enforceVerifiedEmail = settingManager.getEnforceVerifiedEmail();
