@@ -152,7 +152,7 @@ public class SimplisticHttpGetGateWay extends SmsGateway {
       }
     }
 
-    valueStore.put(KEY_TEXT, SmsUtils.encode(text));
+    valueStore.put(KEY_TEXT, config.isSendUrlParameters() ? SmsUtils.encode(text) : text);
     valueStore.put(KEY_RECIPIENT, StringUtils.join(recipients, ","));
 
     return valueStore;
