@@ -54,6 +54,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
+import com.fasterxml.jackson.core.io.JsonStringEncoder;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -152,7 +153,7 @@ public class SimplisticHttpGetGateWay extends SmsGateway {
       }
     }
 
-    valueStore.put(KEY_TEXT, config.isSendUrlParameters() ? SmsUtils.encode(text) : text);
+    valueStore.put(KEY_TEXT, config.isSendUrlParameters() ? SmsUtils.encode(text) : new String(JsonStringEncoder.getInstance().quoteAsString(text)));
     valueStore.put(KEY_RECIPIENT, StringUtils.join(recipients, ","));
 
     return valueStore;
