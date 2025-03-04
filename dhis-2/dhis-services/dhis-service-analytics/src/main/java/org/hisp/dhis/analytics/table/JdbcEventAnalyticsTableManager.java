@@ -509,12 +509,12 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
               and psi.lastupdated >= '${startDate}' \
               and psi.lastupdated < '${endDate}');""",
               Map.of(
-                  "tableName", quote(table.getName()),
+                  "tableName", quote(table.getMainName()),
                   "programId", String.valueOf(table.getProgram().getId()),
                   "startDate", toLongDate(partition.getStartDate()),
                   "endDate", toLongDate(partition.getEndDate())));
 
-      invokeTimeAndLog(sql, "Remove updated events for table: '{}'", table.getName());
+      invokeTimeAndLog(sql, "Remove updated events for table: '{}'", table.getMainName());
     }
   }
 
