@@ -376,7 +376,7 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
                     and ev.lastupdated >= '${startDate}' \
                     and ev.lastupdated < '${endDate}');""",
                 Map.of(
-                    "tableName", sqlBuilder.qualifyTable(table.getName()),
+                    "tableName", sqlBuilder.qualifyTable(table.getMainName()),
                     "programId", String.valueOf(program.getId()),
                     "startDate", toLongDate(partition.getStartDate()),
                     "endDate", toLongDate(partition.getEndDate())));
@@ -401,7 +401,7 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
                     and ev.lastupdated >= '${startDate}' \
                     and ev.lastupdated < '${endDate}');""",
                   Map.of(
-                      "tableName", sqlBuilder.qualifyTable(table.getName()),
+                      "tableName", sqlBuilder.qualifyTable(table.getMainName()),
                       "programStageId", String.valueOf(programStageId),
                       "startDate", toLongDate(partition.getStartDate()),
                       "endDate", toLongDate(partition.getEndDate())));
@@ -409,7 +409,7 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
       }
 
       if (isNotBlank(sql)) {
-        invokeTimeAndLog(sql, "Remove updated events for table: '{}'", table.getName());
+        invokeTimeAndLog(sql, "Remove updated events for table: '{}'", table.getMainName());
       }
     }
   }
