@@ -169,12 +169,17 @@ public class DhisOidcUser extends DefaultOAuth2User implements UserDetails, Oidc
 
   @Override
   public boolean hasAnyAuthority(Collection<String> auths) {
-    return false;
+    return getAllAuthorities().stream().anyMatch(auths::contains);
   }
 
   @Override
   public boolean isAuthorized(String auth) {
-    return false;
+    if (auth == null) {
+      return false;
+    }
+    final Set<String> auths = getAllAuthorities();
+    return auths.contains(UserRole.AUTHORITY_ALL) || auths.contains(auth);
+  }
   }
 
   @Nonnull
