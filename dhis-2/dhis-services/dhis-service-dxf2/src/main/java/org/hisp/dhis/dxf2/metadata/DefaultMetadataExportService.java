@@ -400,11 +400,11 @@ public class DefaultMetadataExportService implements MetadataExportService {
           "Unfiltered access to metadata export requires super user or 'F_METADATA_EXPORT' authority.");
     }
 
+    boolean userViewAuth = false;
+    boolean metadataAuth = false;
     if (params.getClasses().contains(DhisOidcUser.class) && !(user == null
             || user.isSuper()) {
-      Collection<? extends GrantedAuthority> authorities = userDetails.getAuthorities();
-      boolean userViewAuth = false;
-      boolean metadataAuth = false;
+      Collection<? extends GrantedAuthority> authorities = user.getAuthorities();
       for (GrantedAuthority authority : authorities) {
         if (authority.getAuthority().equals(F_USER_VIEW.name())
                 || authority.getAuthority().equals(F_USER_VIEW.name())) {
@@ -417,6 +417,9 @@ public class DefaultMetadataExportService implements MetadataExportService {
       }
       if (userViewAuth && metadataAuth){
         return;
+      }else{
+        throw new MetadataExportException(
+                "Exporting user metadata requires the 'F_USER_VIEW' authority.");
       }
     } else if (params.getClasses().contains(User.class)
         && !(user == null
