@@ -148,6 +148,7 @@ public class JdbcCompletenessTableManager extends AbstractJdbcTableManager {
   @Override
   public boolean hasUpdatedLatestData(Date startDate, Date endDate) {
     String sql =
+        replace(
         """
         select cdr.datasetid \
         from completedatasetregistration cdr \
