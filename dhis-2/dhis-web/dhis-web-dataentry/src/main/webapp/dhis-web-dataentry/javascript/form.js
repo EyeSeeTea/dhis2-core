@@ -174,7 +174,7 @@ dhis2.de.getCurrentOrganisationUnit = function()
 DAO.store = new dhis2.storage.Store( {
     name: 'dhis2de',
     adapters: [ dhis2.storage.IndexedDBAdapter, dhis2.storage.DomSessionStorageAdapter, dhis2.storage.InMemoryAdapter ],
-    objectStores: [ 'optionSets', 'forms' ]
+    objectStores: [ 'optionSets', 'forms', 'metaData', 'dataSetAssociations' ]
 } );
 
 ( function( $ ) {
@@ -240,11 +240,12 @@ $( document ).ready( function()
     $( '#orgUnitTree' ).one( 'ouwtLoaded', function( event, ids, names )
     {
         console.log( 'Ouwt loaded' );
-                
-        $.when( dhis2.de.getMultiOrgUnitSetting(), dhis2.de.loadMetaData(), dhis2.de.loadDataSetAssociations() ).done( function() {
-        	dhis2.de.setMetaDataLoaded();
-            organisationUnitSelected( ids, names );
-        } );
+        DAO.store.open().then(function(){
+            $.when( dhis2.de.getMultiOrgUnitSetting(), dhis2.de.loadMetaData(), dhis2.de.loadDataSetAssociations() ).done( function() {
+                dhis2.de.setMetaDataLoaded();
+                organisationUnitSelected( ids, names );
+            } );
+        });       
     } );
 } );
 
@@ -325,54 +326,62 @@ dhis2.de.ajaxLogin = function()
 
 dhis2.de.loadMetaData = function()
 {
+    function setMetaData(metaData) {
+        dhis2.de.emptyOrganisationUnits = metaData.emptyOrganisationUnits;
+        dhis2.de.significantZeros = metaData.significantZeros;
+        dhis2.de.dataElements = metaData.dataElements;
+        dhis2.de.indicatorFormulas = metaData.indicatorFormulas;
+        dhis2.de.dataSets = metaData.dataSets;
+        dhis2.de.optionSets = metaData.optionSets;
+        dhis2.de.defaultCategoryCombo = metaData.defaultCategoryCombo;
+        dhis2.de.categoryCombos = metaData.categoryCombos;
+        dhis2.de.categories = metaData.categories;
+        dhis2.de.lockExceptions = metaData.lockExceptions;
+    }
+
     var def = $.Deferred();
 	
     $.ajax( {
     	url: 'getMetaData.action',
     	dataType: 'json',
-    	success: function( json )
-	    {
-	        sessionStorage[dhis2.de.cst.metaData] = JSON.stringify( json.metaData );
-	    },
-	    complete: function()
-	    {
-	        var metaData = JSON.parse( sessionStorage[dhis2.de.cst.metaData] );
-	        dhis2.de.emptyOrganisationUnits = metaData.emptyOrganisationUnits;
-	        dhis2.de.significantZeros = metaData.significantZeros;
-	        dhis2.de.dataElements = metaData.dataElements;
-	        dhis2.de.indicatorFormulas = metaData.indicatorFormulas;
-	        dhis2.de.dataSets = metaData.dataSets;
-	        dhis2.de.optionSets = metaData.optionSets;
-	        dhis2.de.defaultCategoryCombo = metaData.defaultCategoryCombo;
-	        dhis2.de.categoryCombos = metaData.categoryCombos;
-	        dhis2.de.categories = metaData.categories;
-	        dhis2.de.lockExceptions = metaData.lockExceptions;
-	        def.resolve();
-	    }
-	} );
+    }).then(function( json ) {
+        setMetaData(json.metaData);
+        DAO.store.set('metaData', $.extend({ id: dhis2.de.cst.metaData }, json.metaData));
+        def.resolve();
+    }, function(){
+        console.warn('getMetaData.action request failed. Trying to load from local cache.');
+        DAO.store.get('metaData', dhis2.de.cst.metaData).then(function( metaData ) {
+            setMetaData(metaData);
+            def.resolve();
+        });
+    });
     
     return def.promise();
 };
 
 dhis2.de.loadDataSetAssociations = function()
 {
+    function setDataSetAssociations( dataSetAssociations ) {
+        dhis2.de.dataSetAssociationSets = dataSetAssociations.dataSetAssociationSets;
+        dhis2.de.organisationUnitAssociationSetMap = dataSetAssociations.organisationUnitAssociationSetMap;
+    }
+
 	var def = $.Deferred();
 	
 	$.ajax( {
     	url: 'getDataSetAssociations.action',
     	dataType: 'json',
-    	success: function( json )
-	    {
-	        sessionStorage[dhis2.de.cst.dataSetAssociations] = JSON.stringify( json.dataSetAssociations );
-	    },
-	    complete: function()
-	    {
-	        var metaData = JSON.parse( sessionStorage[dhis2.de.cst.dataSetAssociations] );
-	        dhis2.de.dataSetAssociationSets = metaData.dataSetAssociationSets;
-	        dhis2.de.organisationUnitAssociationSetMap = metaData.organisationUnitAssociationSetMap;	        
-	        def.resolve();
-	    }
-	} );
+    }).then(function( json ) {
+        setDataSetAssociations(json.dataSetAssociations);
+        DAO.store.set('dataSetAssociations', $.extend({ id: dhis2.de.cst.dataSetAssociations }, json.dataSetAssociations));
+        def.resolve();
+    }, function(){
+        console.warn('getDataSetAssociations.action request failed. Trying to load from local cache.');
+        DAO.store.get('dataSetAssociations', dhis2.de.cst.dataSetAssociations).then(function( dataSetAssociations ) {
+            setDataSetAssociations(dataSetAssociations);
+            def.resolve();
+        });
+    });
 	
 	return def.promise();
 };
@@ -2673,8 +2682,7 @@ function closeCurrentSelection()
 
 function updateForms()
 {
-    DAO.store.open()
-        .then(purgeLocalForms)
+    purgeLocalForms()
         .then(getLocalFormsToUpdate)
         .then(downloadForms)
         .then(getUserSetting)
