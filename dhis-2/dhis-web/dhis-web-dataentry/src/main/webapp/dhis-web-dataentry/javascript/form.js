@@ -346,7 +346,11 @@ dhis2.de.loadMetaData = function()
     	dataType: 'json',
     }).then(function( json ) {
         setMetaData(json.metaData);
-        DAO.store.set('metaData', $.extend({ id: dhis2.de.cst.metaData }, json.metaData));
+        try {
+            DAO.store.set('metaData', $.extend({ id: dhis2.de.cst.metaData }, json.metaData));
+        } catch (error) {
+            console.error(error)
+        }
         def.resolve();
     }, function(){
         console.warn('getMetaData.action request failed. Trying to load from local cache.');
@@ -373,7 +377,11 @@ dhis2.de.loadDataSetAssociations = function()
     	dataType: 'json',
     }).then(function( json ) {
         setDataSetAssociations(json.dataSetAssociations);
-        DAO.store.set('dataSetAssociations', $.extend({ id: dhis2.de.cst.dataSetAssociations }, json.dataSetAssociations));
+        try {
+            DAO.store.set('dataSetAssociations', $.extend({ id: dhis2.de.cst.dataSetAssociations }, json.dataSetAssociations));
+        } catch (error) {
+            console.error(error)
+        }
         def.resolve();
     }, function(){
         console.warn('getDataSetAssociations.action request failed. Trying to load from local cache.');
