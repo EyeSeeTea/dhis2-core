@@ -52,6 +52,7 @@ import org.hisp.dhis.feedback.ForbiddenException;
 import org.hisp.dhis.feedback.NotFoundException;
 import org.hisp.dhis.i18n.I18n;
 import org.hisp.dhis.i18n.I18nManager;
+import org.hisp.dhis.i18n.locale.LocaleManager;
 import org.hisp.dhis.message.MessageSender;
 import org.hisp.dhis.outboundmessage.OutboundMessageResponse;
 import org.hisp.dhis.setting.SettingKey;
@@ -64,6 +65,7 @@ import org.hisp.dhis.user.UserDetails;
 import org.hisp.dhis.user.UserService;
 import org.hisp.dhis.user.UserSettingKey;
 import org.hisp.dhis.user.UserSettingService;
+import org.hisp.dhis.util.ObjectUtils;
 import org.jboss.aerogear.security.otp.api.Base32;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -283,8 +285,13 @@ public class TwoFactorAuthService {
   private void send2FACodeWithEmailSender(@Nonnull User user, @Nonnull String code)
       throws ConflictException {
     // [SMS2FA]
-    Locale locale = (Locale) userSettingService.getUserSetting(UserSettingKey.DB_LOCALE);
-    I18n i18n = i18nManager.getI18n(locale);
+    I18n i18n =
+        i18nManager.getI18n(
+            ObjectUtils.firstNonNull(
+                (Locale)
+                    userSettingService.getUserSetting(
+                        UserSettingKey.UI_LOCALE, user.getUsername()),
+                LocaleManager.DEFAULT_LOCALE));
 
     String applicationTitle = settingsManager.getStringSetting(SettingKey.APPLICATION_TITLE);
 
