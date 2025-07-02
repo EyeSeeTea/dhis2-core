@@ -226,5 +226,4 @@ public interface SystemSettingManager {
   default boolean getEnforceVerifiedEmail() {
     return getBooleanSetting(SettingKey.ENFORCE_VERIFIED_EMAIL);
   }
-
 }

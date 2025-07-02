@@ -43,11 +43,11 @@ import org.hisp.dhis.jsontree.JsonValue;
 import org.hisp.dhis.security.apikey.ApiKeyTokenGenerator;
 import org.hisp.dhis.security.apikey.ApiTokenStore;
 import org.hisp.dhis.security.twofa.TwoFactorType;
-import org.hisp.dhis.webapi.json.domain.JsonMeDto;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.web.HttpStatus;
 import org.hisp.dhis.web.HttpStatus.Series;
 import org.hisp.dhis.webapi.DhisControllerConvenienceTest;
+import org.hisp.dhis.webapi.json.domain.JsonMeDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -288,7 +288,8 @@ class MeControllerTest extends DhisControllerConvenienceTest {
   //   userService.updateUser(userByUsername);
 
   //   assertEquals(
-  //       "myvalue", GET("/me").content().as(JsonMeDto.class).getAttributeValues().get(0).getValue());
+  //       "myvalue",
+  // GET("/me").content().as(JsonMeDto.class).getAttributeValues().get(0).getValue());
   // }
 
   @Test

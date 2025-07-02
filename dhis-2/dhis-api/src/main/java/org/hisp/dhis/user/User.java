@@ -78,8 +78,10 @@ import org.springframework.util.ClassUtils;
  */
 @JacksonXmlRootElement(localName = "user", namespace = DxfNamespaces.DXF_2_0)
 public class User extends BaseIdentifiableObject implements MetadataObject {
-  // [SMS2FA] - required by dhis-service-dxf2 dxf2/deprecated/tracker/event/AbstractEventService.java
+  // [SMS2FA] - required by dhis-service-dxf2
+  // dxf2/deprecated/tracker/event/AbstractEventService.java
   public static final int USERNAME_MAX_LENGTH = 255;
+
   /** Globally unique identifier for User. */
   private UUID uuid;
 
