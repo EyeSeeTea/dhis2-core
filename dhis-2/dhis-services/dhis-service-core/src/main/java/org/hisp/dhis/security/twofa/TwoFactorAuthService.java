@@ -289,8 +289,7 @@ public class TwoFactorAuthService {
         i18nManager.getI18n(
             ObjectUtils.firstNonNull(
                 (Locale)
-                    userSettingService.getUserSetting(
-                        UserSettingKey.UI_LOCALE, user.getUsername()),
+                    userSettingService.getUserSetting(UserSettingKey.UI_LOCALE, user.getUsername()),
                 LocaleManager.DEFAULT_LOCALE));
 
     String applicationTitle = settingsManager.getStringSetting(SettingKey.APPLICATION_TITLE);
