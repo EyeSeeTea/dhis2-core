@@ -48,7 +48,7 @@ import javax.mail.internet.MimeMessage;
 import javax.mail.internet.MimeMultipart;
 import lombok.extern.slf4j.Slf4j;
 import org.hisp.dhis.login.LoginResponse.STATUS;
-import org.hisp.dhis.test.e2e.helpers.config.TestConfiguration;
+import org.hisp.dhis.helpers.config.TestConfiguration;
 import org.jboss.aerogear.security.otp.Totp;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterEach;
