@@ -295,7 +295,9 @@ public enum SettingKey {
    * the app does not exist *
    */
   GLOBAL_SHELL_APP_NAME("globalShellAppName", "global-app-shell", String.class, false, false),
-  ;
+
+  /** [SMS2FA] Indicates if email verification is enforced */
+  ENFORCE_VERIFIED_EMAIL("enforceVerifiedEmail", Boolean.FALSE, Boolean.class, false, false);
 
   private final String name;
 

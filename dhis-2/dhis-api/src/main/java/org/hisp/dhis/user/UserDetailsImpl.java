@@ -37,6 +37,7 @@ import lombok.EqualsAndHashCode;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.springframework.security.core.GrantedAuthority;
 
 @Getter
@@ -54,6 +55,9 @@ public class UserDetailsImpl implements UserDetails {
   private final String password;
   private final boolean externalAuth;
   private final boolean isTwoFactorEnabled;
+  private final TwoFactorType twoFactorType;
+  private final String secret;
+  private final boolean isEmailVerified;
   private final boolean enabled;
   private final boolean accountNonExpired;
   private final boolean accountNonLocked;
@@ -81,6 +85,11 @@ public class UserDetailsImpl implements UserDetails {
     }
 
     return auths.containsAll(other.getAllAuthorities());
+  }
+
+  @Override
+  public boolean isEmailVerified() {
+    return this.isEmailVerified;
   }
 
   @Override
