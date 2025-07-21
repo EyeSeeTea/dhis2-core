@@ -232,6 +232,11 @@ public class TwoFactorAuthService {
       sendEmail2FACode(user.getUsername());
       throw new ConflictException(ErrorCode.E3051);
     }
+    if (TwoFactorType.SMS_ENABLED.equals(user.getTwoFactorType())
+        && Strings.isNullOrEmpty(code)) {
+      sendSMS2FACode(user.getUsername());
+      throw new ConflictException(ErrorCode.E3151);
+    }
     if (Strings.isNullOrEmpty(code)) {
       throw new ConflictException(ErrorCode.E3050);
     }
