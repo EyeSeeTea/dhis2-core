@@ -151,7 +151,8 @@ public class UserObjectBundleHook extends AbstractObjectBundleHook<User> {
         && existingUser.getPhoneNumber() != null
         && user.getPhoneNumber() != null
         && !existingUser.getPhoneNumber().equals(user.getPhoneNumber())) {
-      addReports.accept(new ErrorReport(User.class, ErrorCode.E3152).setErrorProperty("phoneNumber"));
+      addReports.accept(
+          new ErrorReport(User.class, ErrorCode.E3152).setErrorProperty("phoneNumber"));
     }
   }
 
