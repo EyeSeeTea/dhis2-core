@@ -207,6 +207,8 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
       twoFactorAuthService.sendEmail2FACode(userDetails.getUsername());
     } catch (TwoFactorCodeSentRateLimitException ex) {
       throw ex;
+    } catch (TwoFactorCodeDeliveryFailedException ex) {
+      throw ex;
     } catch (ConflictException ex) {
       throw new TwoFactorCodeSentException(ex.getMessage(), TwoFactorType.EMAIL_ENABLED);
     }
@@ -216,6 +218,8 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
     try {
       twoFactorAuthService.sendSMS2FACode(userDetails.getUsername());
     } catch (TwoFactorCodeSentRateLimitException ex) {
+      throw ex;
+    } catch (TwoFactorCodeDeliveryFailedException ex) {
       throw ex;
     } catch (ConflictException e) {
       throw new TwoFactorAuthenticationException(

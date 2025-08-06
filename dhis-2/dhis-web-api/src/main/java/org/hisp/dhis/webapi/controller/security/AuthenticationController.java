@@ -39,6 +39,7 @@ import org.hisp.dhis.external.conf.ConfigurationKey;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.security.spring2fa.TwoFactorAuthenticationEnrolmentException;
 import org.hisp.dhis.security.spring2fa.TwoFactorAuthenticationException;
+import org.hisp.dhis.security.spring2fa.TwoFactorCodeDeliveryFailedException;
 import org.hisp.dhis.security.spring2fa.TwoFactorCodeSentException;
 import org.hisp.dhis.security.spring2fa.TwoFactorCodeSentRateLimitException;
 import org.hisp.dhis.security.spring2fa.TwoFactorWebAuthenticationDetails;
@@ -168,6 +169,8 @@ public class AuthenticationController {
 
     } catch (TwoFactorCodeSentRateLimitException e) {
       return LoginResponse.builder().loginStatus(STATUS.TWO_FACTOR_MANY_SEND_ATTEMPTS).build();
+    } catch (TwoFactorCodeDeliveryFailedException e) {
+      return LoginResponse.builder().loginStatus(STATUS.TWO_FACTOR_CODE_DELIVERY_FAILED).build();
     } catch (TwoFactorCodeSentException e) {
       TwoFactorType twoFactorType = e.getType();
       if (twoFactorType == TwoFactorType.EMAIL_ENABLED) {
