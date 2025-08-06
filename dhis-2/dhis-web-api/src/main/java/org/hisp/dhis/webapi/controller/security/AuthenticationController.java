@@ -40,6 +40,7 @@ import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.security.spring2fa.TwoFactorAuthenticationEnrolmentException;
 import org.hisp.dhis.security.spring2fa.TwoFactorAuthenticationException;
 import org.hisp.dhis.security.spring2fa.TwoFactorCodeSentException;
+import org.hisp.dhis.security.spring2fa.TwoFactorCodeSentRateLimitException;
 import org.hisp.dhis.security.spring2fa.TwoFactorWebAuthenticationDetails;
 import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.hisp.dhis.setting.SettingKey;
@@ -165,6 +166,8 @@ public class AuthenticationController {
 
       return LoginResponse.builder().loginStatus(STATUS.SUCCESS).redirectUrl(redirectUrl).build();
 
+    } catch (TwoFactorCodeSentRateLimitException e) {
+      return LoginResponse.builder().loginStatus(STATUS.TWO_FACTOR_MANY_SEND_ATTEMPTS).build();
     } catch (TwoFactorCodeSentException e) {
       TwoFactorType twoFactorType = e.getType();
       if (twoFactorType == TwoFactorType.EMAIL_ENABLED) {
@@ -283,9 +286,9 @@ public class AuthenticationController {
 
   private void publishAuthenticationFailureEvent(Authentication auth, Exception exception) {
     if (this.eventPublisher != null) {
-      AbstractAuthenticationFailureEvent failureEvent = 
-          new AuthenticationFailureBadCredentialsEvent(auth, 
-              new BadCredentialsException("2FA authentication failed", exception));
+      AbstractAuthenticationFailureEvent failureEvent =
+          new AuthenticationFailureBadCredentialsEvent(
+              auth, new BadCredentialsException("2FA authentication failed", exception));
       this.eventPublisher.publishEvent(failureEvent);
     }
   }

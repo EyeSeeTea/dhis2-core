@@ -96,6 +96,7 @@ public class DefaultCacheProvider implements CacheProvider {
     userAccountRecoverAttempt,
     userFailedLoginAttempt,
     twoFaDisableFailedAttempt,
+    twoFaCodeSentAttempt,
     programOwner,
     programTempOwner,
     userIdCache,
@@ -300,6 +301,15 @@ public class DefaultCacheProvider implements CacheProvider {
     return registerCache(
         this.<V>newBuilder()
             .forRegion(Region.twoFaDisableFailedAttempt.name())
+            .expireAfterWrite(15, MINUTES)
+            .withDefaultValue(defaultValue));
+  }
+
+  @Override
+  public <V> Cache<V> createTwoFACodeSentAttemptCache(V defaultValue) {
+    return registerCache(
+        this.<V>newBuilder()
+            .forRegion(Region.twoFaCodeSentAttempt.name())
             .expireAfterWrite(15, MINUTES)
             .withDefaultValue(defaultValue));
   }

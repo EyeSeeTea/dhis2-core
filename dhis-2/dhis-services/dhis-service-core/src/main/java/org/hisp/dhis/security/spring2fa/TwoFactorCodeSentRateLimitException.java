@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2024, University of Oslo
+ * Copyright (c) 2004-2025, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,46 +25,24 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.hisp.dhis.webapi.controller.security;
+package org.hisp.dhis.security.spring2fa;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import org.hisp.dhis.security.twofa.TwoFactorType;
+import org.springframework.security.authentication.BadCredentialsException;
 
 /**
- * @author Morten Svanæs <msvanaes@dhis2.org>
+ * Exception thrown when 2FA code sending is rate limited. This occurs when a user has attempted to
+ * send too many 2FA codes within the allowed time period.
  */
-@NoArgsConstructor
-@AllArgsConstructor
-@Getter
-@Builder
-public class LoginResponse {
-  @Getter
-  public enum STATUS {
-    SUCCESS("loginSuccess"),
-    ACCOUNT_DISABLED("accountDisabled"),
-    ACCOUNT_LOCKED("accountLocked"),
-    ACCOUNT_EXPIRED("accountExpired"),
-    PASSWORD_EXPIRED("passwordExpired"),
-    EMAIL_TWO_FACTOR_CODE_SENT("emailTwoFactorCodeSent"),
-    SMS_TWO_FACTOR_CODE_SENT("smsTwoFactorCodeSent"),
-    INCORRECT_TWO_FACTOR_CODE_TOTP("incorrectTwoFactorCodeTOTP"),
-    INCORRECT_TWO_FACTOR_CODE_EMAIL("incorrectTwoFactorCodeEmail"),
-    INCORRECT_TWO_FACTOR_CODE_SMS("incorrectTwoFactorCodeSMS"),
-    TWO_FACTOR_MANY_SEND_ATTEMPTS("twoFactorManySendAttempts"),
-    REQUIRES_TWO_FACTOR_ENROLMENT("requiresTwoFactorEnrolment");
+public class TwoFactorCodeSentRateLimitException extends BadCredentialsException {
+  private final TwoFactorType type;
 
-    private final String keyName;
-    private final String defaultValue;
-
-    STATUS(String keyName) {
-      this.keyName = keyName;
-      this.defaultValue = null;
-    }
+  public TwoFactorCodeSentRateLimitException(String msg, TwoFactorType type) {
+    super(msg);
+    this.type = type;
   }
 
-  @JsonProperty private STATUS loginStatus;
-  @JsonProperty private String redirectUrl;
+  public TwoFactorType getType() {
+    return type;
+  }
 }
