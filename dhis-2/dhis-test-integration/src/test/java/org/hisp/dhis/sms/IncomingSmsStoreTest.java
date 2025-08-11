@@ -96,4 +96,20 @@ class IncomingSmsStoreTest extends SingleSetupIntegrationTestBase {
     assertEquals(1, outboundSmsStore.get(OutboundSmsStatus.OUTBOUND).size());
     assertEquals(1, outboundSmsStore.get(OutboundSmsStatus.OUTBOUND, 0, 10, false).size());
   }
+
+  @Test
+  void testOutboundSmsMasked() {
+    OutboundSms outboundSms = new OutboundSms();
+    outboundSms.setDate(new Date());
+    outboundSms.setMessage("Your code is 123456");
+    outboundSms.setSender("testSender");
+    outboundSms.setStatus(OutboundSmsStatus.OUTBOUND);
+    outboundSms.setSubject("testSubject");
+    outboundSms.setRecipients(Sets.newHashSet("testRecipient"));
+    outboundSmsStore.saveOutboundSms(outboundSms);
+    assertEquals(1, outboundSmsStore.get(OutboundSmsStatus.OUTBOUND).size());
+    assertEquals(1, outboundSmsStore.get(OutboundSmsStatus.OUTBOUND, 0, 10, false).size());
+    OutboundSms persisted = outboundSmsStore.get(OutboundSmsStatus.OUTBOUND).get(0);
+    assertEquals("Your code is ******", persisted.getMessage());
+  }
 }
