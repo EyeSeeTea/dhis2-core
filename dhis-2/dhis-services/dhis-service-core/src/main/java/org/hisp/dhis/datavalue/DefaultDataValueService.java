@@ -142,14 +142,14 @@ public class DefaultDataValueService implements DataValueService {
       softDelete.setLastUpdated(currentDate);
 
       dataValueStore.updateDataValue(softDelete);
+    }
 
-      if (config.isEnabled(CHANGELOG_AGGREGATE)) {
-        DataValueAudit dataValueAudit =
-            new DataValueAudit(
-                dataValue, dataValue.getValue(), dataValue.getStoredBy(), ChangeLogType.CREATE);
+    if (config.isEnabled(CHANGELOG_AGGREGATE)) {
+      DataValueAudit dataValueAudit =
+              new DataValueAudit(
+                      dataValue, dataValue.getAuditValue(), dataValue.getStoredBy(), ChangeLogType.CREATE);
 
-        dataValueAuditService.addDataValueAudit(dataValueAudit);
-      }
+      dataValueAuditService.addDataValueAudit(dataValueAudit);
     }
 
     return true;
@@ -202,6 +202,9 @@ public class DefaultDataValueService implements DataValueService {
               dataValue.getAuditValue(),
               CurrentUserUtil.getCurrentUsername(),
               ChangeLogType.DELETE);
+
+      new DataValueAudit(
+              dataValue, dataValue.getValue(), dataValue.getStoredBy(), ChangeLogType.CREATE);
 
       dataValueAuditService.addDataValueAudit(dataValueAudit);
     }
