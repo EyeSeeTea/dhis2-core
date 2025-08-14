@@ -203,9 +203,6 @@ public class DefaultDataValueService implements DataValueService {
               CurrentUserUtil.getCurrentUsername(),
               ChangeLogType.DELETE);
 
-      new DataValueAudit(
-              dataValue, dataValue.getValue(), dataValue.getStoredBy(), ChangeLogType.CREATE);
-
       dataValueAuditService.addDataValueAudit(dataValueAudit);
     }
 
