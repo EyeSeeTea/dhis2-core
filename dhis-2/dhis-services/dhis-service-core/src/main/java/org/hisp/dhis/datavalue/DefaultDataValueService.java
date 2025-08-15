@@ -141,8 +141,8 @@ public class DefaultDataValueService implements DataValueService {
 
     if (config.isEnabled(CHANGELOG_AGGREGATE)) {
       DataValueAudit dataValueAudit =
-              new DataValueAudit(
-                      dataValue, dataValue.getAuditValue(), dataValue.getStoredBy(), ChangeLogType.CREATE);
+          new DataValueAudit(
+              dataValue, dataValue.getAuditValue(), dataValue.getStoredBy(), ChangeLogType.CREATE);
 
       dataValueAuditService.addDataValueAudit(dataValueAudit);
     }
