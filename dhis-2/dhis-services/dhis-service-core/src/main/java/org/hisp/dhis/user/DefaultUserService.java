@@ -132,6 +132,7 @@ public class DefaultUserService implements UserService {
   private final Cache<Integer> userFailedLoginAttemptCache;
   private final Cache<Integer> userAccountRecoverAttemptCache;
   private final Cache<Integer> twoFaDisableFailedAttemptCache;
+  private final Cache<Integer> twoFaCodeSentAttemptCache;
 
   public DefaultUserService(
       UserSettingService userSettingService,
@@ -182,6 +183,7 @@ public class DefaultUserService implements UserService {
     this.userFailedLoginAttemptCache = cacheProvider.createUserFailedLoginAttemptCache(0);
     this.userAccountRecoverAttemptCache = cacheProvider.createUserAccountRecoverAttemptCache(0);
     this.twoFaDisableFailedAttemptCache = cacheProvider.createDisable2FAFailedAttemptCache(0);
+    this.twoFaCodeSentAttemptCache = cacheProvider.createTwoFACodeSentAttemptCache(0);
   }
 
   @Override
@@ -797,6 +799,23 @@ public class DefaultUserService implements UserService {
   @Override
   public boolean is2FADisableEndpointLocked(String username) {
     return twoFaDisableFailedAttemptCache.get(username).orElse(0) >= LOGIN_MAX_FAILED_ATTEMPTS;
+  }
+
+  @Override
+  public void register2FACodeSentAttempt(String username) {
+    Integer attempts = twoFaCodeSentAttemptCache.get(username).orElse(0);
+    attempts++;
+    twoFaCodeSentAttemptCache.put(username, attempts);
+  }
+
+  @Override
+  public boolean is2FACodeSendingLocked(String username) {
+    return twoFaCodeSentAttemptCache.get(username).orElse(0) >= LOGIN_MAX_FAILED_ATTEMPTS;
+  }
+
+  @Override
+  public void reset2FACodeSendAttempts(String username) {
+    twoFaCodeSentAttemptCache.invalidate(username);
   }
 
   @Override

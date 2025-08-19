@@ -59,7 +59,15 @@ public class HibernateOutboundSmsStore extends HibernateIdentifiableObjectStore<
   @Override
   public void saveOutboundSms(OutboundSms sms) {
     checkDate(sms);
+    maskSixDigitCodes(sms);
     save(sms);
+  }
+
+  /** Masks any 6-digit code in the SMS message with ******. */
+  private void maskSixDigitCodes(OutboundSms sms) {
+    if (sms != null && sms.getMessage() != null) {
+      sms.setMessage(sms.getMessage().replaceAll("\\b\\d{6}\\b", "******"));
+    }
   }
 
   private void checkDate(OutboundSms sms) {

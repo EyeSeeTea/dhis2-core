@@ -81,7 +81,6 @@ import org.hisp.dhis.user.UserLookup;
 import org.hisp.dhis.user.UserRole;
 import org.hisp.dhis.user.UserService;
 import org.hisp.dhis.webapi.mvc.annotation.ApiVersion;
-import org.hisp.dhis.webapi.utils.ContextUtils;
 import org.hisp.dhis.webapi.utils.HttpServletRequestPaths;
 import org.hisp.dhis.webapi.webdomain.user.UserLookups;
 import org.springframework.http.HttpStatus;
@@ -571,12 +570,13 @@ public class AccountController {
   public void verifyEmail(
       @RequestParam String token, HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    // [SMS2FA] redirects were previously prepended with
+    // ContextUtils.getRootPath(request)
+    // this caused to redirect to "/api/dhis-web.." which does not exist
     if (userService.verifyEmail(token)) {
-      response.sendRedirect(
-          ContextUtils.getRootPath(request) + "/dhis-web-login/#/email-verification-success");
+      response.sendRedirect("/dhis-web-login/#/email-verification-success");
     } else {
-      response.sendRedirect(
-          ContextUtils.getRootPath(request) + "/dhis-web-login/#/email-verification-failure");
+      response.sendRedirect("/dhis-web-login/#/email-verification-failure");
     }
   }
 
