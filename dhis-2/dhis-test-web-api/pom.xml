@@ -17,8 +17,10 @@
   </properties>
 
   <dependencies>
-    <!-- dhis-test-web-api only contains tests so test scope on modules it tests is intuitively correct, but to have its
-         coverage included in the report we need to use scope compile (or runtime, provided) see https://www.eclemma.org/jacoco/trunk/doc/report-aggregate-mojo.html -->
+    <!-- dhis-test-web-api only contains tests so test scope on modules it tests is intuitively
+    correct, but to have its
+         coverage included in the report we need to use scope compile (or runtime, provided) see
+    https://www.eclemma.org/jacoco/trunk/doc/report-aggregate-mojo.html -->
     <dependency>
       <groupId>org.hisp.dhis</groupId>
       <artifactId>dhis-api</artifactId>
@@ -126,6 +128,17 @@
     </dependency>
 
     <!-- Test -->
+
+    <dependency>
+      <groupId>com.google.zxing</groupId>
+      <artifactId>core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.google.zxing</groupId>
+      <artifactId>javase</artifactId>
+      <scope>test</scope>
+    </dependency>
     <dependency>
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-annotations</artifactId>
@@ -373,17 +386,18 @@
           <failOnWarning>true</failOnWarning>
           <ignoredUnusedDeclaredDependencies>
             <ignoredUnusedDeclaredDependency>com.h2database:h2</ignoredUnusedDeclaredDependency>
-            // Removing cron-utils dependency is causing
-            // javax.persistence.PersistenceException: org.hibernate.PropertyValueException:
-            not-null property references a null or transient value
-            // in MapControllerTest.testPutJsonObject()
-            // in ApiTokenControllerTest.testListApiTokens()
-            // in ApiTokenControllerTest.testListApiTokensNotYours()
+            //
+            Removing cron-utils dependency is causing // javax.persistence.PersistenceException:
+            org.hibernate.PropertyValueException: not-null property references a null or transient
+            value // in MapControllerTest.testPutJsonObject() // in
+            ApiTokenControllerTest.testListApiTokens() // in
+            ApiTokenControllerTest.testListApiTokensNotYours()
             <ignoredUnusedDeclaredDependency>com.cronutils:cron-utils</ignoredUnusedDeclaredDependency>
-            // Removing jsonassert dependency is causing
-            // java.lang.NoClassDefFoundError: org/skyscreamer/jsonassert/JSONAssert
-            // in StaticContentControllerTest.verifyErrorWhenStoringInvalidMimeType()
-            // in StaticContentControllerTest.verifyErrorWhenStoringInvalidKey()
+            // Removing jsonassert
+            dependency is causing // java.lang.NoClassDefFoundError:
+            org/skyscreamer/jsonassert/JSONAssert // in
+            StaticContentControllerTest.verifyErrorWhenStoringInvalidMimeType() // in
+            StaticContentControllerTest.verifyErrorWhenStoringInvalidKey()
             <ignoredUnusedDeclaredDependency>org.skyscreamer:jsonassert</ignoredUnusedDeclaredDependency>
           </ignoredUnusedDeclaredDependencies>
           <ignoredNonTestScopedDependencies>

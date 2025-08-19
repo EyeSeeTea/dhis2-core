@@ -496,10 +496,10 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
   public Map<String, String> getUserGroupUserEmailsByUsername(String userGroupId) {
     String sql =
         """
-            select u.username, u.email from userinfo u
-            where u.email is not null
-              and u.userinfoid in (select m.userid from usergroup g inner join usergroupmembers m on m.usergroupid = g.usergroupid where g.uid = :group);
-            """;
+        select u.username, u.email from userinfo u
+        where u.email is not null
+          and u.userinfoid in (select m.userid from usergroup g inner join usergroupmembers m on m.usergroupid = g.usergroupid where g.uid = :group);
+        """;
     NativeQuery<?> emailsByUsername =
         nativeSynchronizedQuery(sql)
             .addSynchronizedEntityClass(UserGroup.class)
@@ -558,7 +558,8 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
     query.setParameter("email", email);
     List<User> list = query.getResultList();
     if (list.size() > 1) {
-      // password, but that should be changed when we have verified emails implemented.
+      // password, but that should be changed when we have verified emails
+      // implemented.
       log.warn("Multiple users found with email: {}", email);
       return null;
     }
@@ -624,14 +625,31 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
   }
 
   @Override
+  public User getUserByEmailVerificationToken(String token) {
+    Query<User> query =
+        getSession()
+            .createQuery("from User u where u.emailVerificationToken like :token", User.class);
+    query.setParameter("token", token + "%");
+    return query.uniqueResult();
+  }
+
+  @Override
+  public User getUserByVerifiedEmail(String email) {
+    Query<User> query =
+        getSession().createQuery("from User u where u.verifiedEmail = :email", User.class);
+    query.setParameter("email", email);
+    return query.uniqueResult();
+  }
+
+  @Override
   public List<User> getUsersWithOrgUnits(
       @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull Set<UID> uids) {
     return getQuery(
             """
-        select distinct u from User u
-        left join fetch u.%s ous
-        where ous.uid in :uids
-        """
+            select distinct u from User u
+            left join fetch u.%s ous
+            where ous.uid in :uids
+            """
                 .formatted(orgUnitProperty.getValue()))
         .setParameter("uids", UID.toValueList(uids))
         .getResultList();
