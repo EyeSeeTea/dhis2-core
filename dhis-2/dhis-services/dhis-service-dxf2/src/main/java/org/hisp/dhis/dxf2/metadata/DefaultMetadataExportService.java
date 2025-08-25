@@ -44,7 +44,10 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -228,6 +231,8 @@ public class DefaultMetadataExportService implements MetadataExportService {
     Map<Class<? extends IdentifiableObject>, List<? extends IdentifiableObject>> metadata =
         getMetadata(params);
 
+    filterMapViewObjects(metadata);
+
     for (Map.Entry<Class<? extends IdentifiableObject>, List<? extends IdentifiableObject>> entry :
         metadata.entrySet()) {
       FieldFilterParams<?> fieldFilterParams =
@@ -246,6 +251,32 @@ public class DefaultMetadataExportService implements MetadataExportService {
     }
 
     return rootNode;
+  }
+
+  private void filterMapViewObjects(Map<Class<? extends IdentifiableObject>, List<? extends IdentifiableObject>> metadata) {
+    List<? extends IdentifiableObject> mapObjects = metadata.get(org.hisp.dhis.mapping.Map.class);
+    List<? extends IdentifiableObject> mapViewObjects = metadata.get(org.hisp.dhis.mapping.MapView.class);
+
+    if (mapObjects != null && mapViewObjects != null) {
+      Set<String> mapViewIdsInMap = new HashSet<>();
+      for (IdentifiableObject mapObj : mapObjects) {
+        if (mapObj instanceof org.hisp.dhis.mapping.Map) {
+          org.hisp.dhis.mapping.Map map = (org.hisp.dhis.mapping.Map) mapObj;
+          for (org.hisp.dhis.mapping.MapView mapView : map.getMapViews()) {
+            mapViewIdsInMap.add(mapView.getUid());
+          }
+        }
+      }
+
+      mapViewObjects = mapViewObjects.stream()
+              .filter(obj -> !mapViewIdsInMap.contains(obj.getUid()))
+              .collect(Collectors.toList());
+      if (mapViewObjects.isEmpty()) {
+        metadata.remove(org.hisp.dhis.mapping.MapView.class);
+      } else {
+        metadata.put(org.hisp.dhis.mapping.MapView.class, mapViewObjects);
+      }
+    }
   }
 
   @Override
