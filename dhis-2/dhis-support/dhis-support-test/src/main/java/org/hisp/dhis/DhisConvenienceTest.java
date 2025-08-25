@@ -968,7 +968,7 @@ public abstract class DhisConvenienceTest {
     unit.setCode("OrganisationUnitCode" + uniqueCharacter);
     unit.setOpeningDate(date);
     unit.setComment("Comment" + uniqueCharacter);
-    //    unit.getSharing().setPublicAccess("--------");
+    // unit.getSharing().setPublicAccess("--------");
 
     return unit;
   }
@@ -2518,10 +2518,14 @@ public abstract class DhisConvenienceTest {
       authorities.addAll(Lists.newArrayList(auths));
     }
 
-    UserRole group = new UserRole();
-    group.setName("Superuser");
-    group.getAuthorities().addAll(authorities);
-    userService.addUserRole(group);
+    // [SMS2FA] workaround for constrain errors because of creating same role multiple times
+    UserRole group = userService.getUserRoleByName("Superuser");
+    if (group == null) {
+      group = new UserRole();
+      group.setName("Superuser");
+      group.getAuthorities().addAll(authorities);
+      userService.addUserRole(group);
+    }
 
     User user = makeUser(getNextUniqueChar());
     user.setUsername(CodeGenerator.generateCode(16));

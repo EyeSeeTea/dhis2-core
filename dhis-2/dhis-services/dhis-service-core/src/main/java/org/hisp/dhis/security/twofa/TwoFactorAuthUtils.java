@@ -128,6 +128,8 @@ public class TwoFactorAuthUtils {
       return TwoFactorAuthUtils.verifyTOTP2FACode(code, secret);
     } else if (TwoFactorType.EMAIL_ENABLED == type || TwoFactorType.ENROLLING_EMAIL == type) {
       return TwoFactorAuthUtils.verifyEmail2FACode(code, secret);
+    } else if (TwoFactorType.SMS_ENABLED == type || TwoFactorType.ENROLLING_SMS == type) {
+      return TwoFactorAuthUtils.verifySMS2FACode(code, secret);
     }
     return false;
   }
@@ -140,6 +142,27 @@ public class TwoFactorAuthUtils {
    * @return true if the code is valid, false otherwise.
    */
   public static boolean verifyEmail2FACode(@Nonnull String code, @Nonnull String secretAndTTL) {
+    if (!SECRET_AND_TTL.matcher(secretAndTTL).matches()) {
+      return false;
+    }
+    String[] parts = PIPE_SPLIT.split(secretAndTTL);
+    String secret = parts[0];
+    long ttl = Long.parseLong(parts[1]);
+    if (ttl < System.currentTimeMillis()) {
+      return false;
+    }
+    return code.equals(secret);
+  }
+
+  /**
+   * Verify the SMS based 2FA code.
+   *
+   * @todo Unify with verifyEmail2FACode?
+   * @param code 2FA code
+   * @param secretAndTTL secret and TTL string separated by a pipe character.
+   * @return true if the code is valid, false otherwise.
+   */
+  public static boolean verifySMS2FACode(@Nonnull String code, @Nonnull String secretAndTTL) {
     if (!SECRET_AND_TTL.matcher(secretAndTTL).matches()) {
       return false;
     }

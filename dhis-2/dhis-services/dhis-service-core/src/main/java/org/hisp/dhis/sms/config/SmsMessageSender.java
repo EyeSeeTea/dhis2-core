@@ -65,6 +65,9 @@ import org.springframework.context.annotation.Scope;
 import org.springframework.context.annotation.ScopedProxyMode;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.AsyncResult;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.concurrent.ListenableFuture;
 
@@ -336,11 +339,22 @@ public class SmsMessageSender implements MessageSender {
       status.setOk(false);
       sms.setStatus(OutboundSmsStatus.FAILED);
     }
+
+    // [SMS2FA] keep the original auth after this call (if any)
+    // This is to avoid the side-effect of clearing the auth context after this call
+    // currentUser still available for other calls afterwards
+    Authentication originalAuth = SecurityContextHolder.getContext().getAuthentication();
     try {
       authenticationService.obtainSystemAuthentication();
       outboundSmsService.save(sms);
     } finally {
-      authenticationService.clearAuthentication();
+      if (originalAuth != null) {
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(originalAuth);
+        SecurityContextHolder.setContext(context);
+      } else {
+        authenticationService.clearAuthentication();
+      }
     }
     status.setDescription(gatewayResponse.getResponseMessage());
     status.setResponseObject(gatewayResponse);

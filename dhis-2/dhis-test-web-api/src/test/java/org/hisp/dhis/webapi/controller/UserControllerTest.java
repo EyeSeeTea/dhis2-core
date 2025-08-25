@@ -64,6 +64,7 @@ import org.hisp.dhis.message.MessageSender;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.organisationunit.OrganisationUnitService;
 import org.hisp.dhis.outboundmessage.OutboundMessage;
+import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.hisp.dhis.setting.SettingKey;
 import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.user.RestoreType;
@@ -435,9 +436,9 @@ class UserControllerTest extends DhisControllerConvenienceTest {
         PATCH(
                 "/users/" + user.getUid(),
                 """
-                [{'op':'add','path':'/organisationUnits','value':[{'id':'%s'}]},
-                 {'op':'add','path':'/dataViewOrganisationUnits','value':[{'id':'%s'}]},
-                 {'op':'add','path':'/teiSearchOrganisationUnits','value':[{'id':'%s'}]}]"""
+            [{'op':'add','path':'/organisationUnits','value':[{'id':'%s'}]},
+             {'op':'add','path':'/dataViewOrganisationUnits','value':[{'id':'%s'}]},
+             {'op':'add','path':'/teiSearchOrganisationUnits','value':[{'id':'%s'}]}]"""
                     .formatted(orgA.getUid(), orgA.getUid(), orgA.getUid()))
             .content(HttpStatus.CONFLICT)
             .get("response")
@@ -735,12 +736,56 @@ class UserControllerTest extends DhisControllerConvenienceTest {
 
     User user = userService.getUserByUsername(peter.getUsername());
     user.setSecret("secret");
+    user.setTwoFactorType(TwoFactorType.TOTP_ENABLED);
     userService.updateUser(user);
 
     response = GET("/users/{id}", peter.getUid()).content();
     userCredentials = response.getObject("userCredentials");
     twoFA = userCredentials.get("twoFA").as(JsonBoolean.class).bool();
     assertTrue(twoFA);
+  }
+
+  @Test
+  void testChangeEmailWithEmail2FaEnabled() {
+    User user = userService.getUserByUsername(peter.getUsername());
+    user.setSecret("secret");
+    user.setTwoFactorType(TwoFactorType.EMAIL_ENABLED);
+    userService.updateUser(user);
+
+    assertStatus(
+        HttpStatus.CONFLICT,
+        PATCH(
+            "/users/{id}?importReportMode=ERRORS",
+            peter.getUid(),
+            Body("[{'op': 'replace', 'path': '/email', 'value': 'peter-new-mail@pan.net'}]")));
+    assertStatus(
+        HttpStatus.CONFLICT,
+        PATCH(
+            "/users/{id}?importReportMode=ERRORS",
+            peter.getUid(),
+            Body("[{'op': 'replace', 'path': '/email', 'value': null}]")));
+  }
+
+  @Test
+  void testChangePhoneWithSMS2FaEnabled() {
+    User user = userService.getUserByUsername(peter.getUsername());
+    user.setSecret("secret");
+    user.setPhoneNumber("123456789");
+    user.setTwoFactorType(TwoFactorType.SMS_ENABLED);
+    userService.updateUser(user);
+
+    assertStatus(
+        HttpStatus.CONFLICT,
+        PATCH(
+            "/users/{id}?importReportMode=ERRORS",
+            peter.getUid(),
+            Body("[{'op': 'replace', 'path': '/phoneNumber', 'value': '111111111'}]")));
+    assertStatus(
+        HttpStatus.CONFLICT,
+        PATCH(
+            "/users/{id}?importReportMode=ERRORS",
+            peter.getUid(),
+            Body("[{'op': 'replace', 'path': '/phoneNumber', 'value': null}]")));
   }
 
   @Test
