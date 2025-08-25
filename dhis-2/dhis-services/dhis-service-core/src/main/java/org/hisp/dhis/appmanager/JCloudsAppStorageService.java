@@ -274,7 +274,8 @@ public class JCloudsAppStorageService implements AppStorageService {
     } else {
       // slower but works for S3:
       // delete the manifest file first in case the system crashes during deletion
-      // and the manifest file is not deleted, resulting in an app that can't be installed
+      // and the manifest file is not deleted, resulting in an app that can't be
+      // installed
       jCloudsStore.removeBlob(app.getFolderName() + "manifest.webapp");
       // Delete all files related to app
       ListContainerOptions options = prefix(app.getFolderName()).recursive();

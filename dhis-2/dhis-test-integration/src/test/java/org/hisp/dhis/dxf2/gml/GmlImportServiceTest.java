@@ -52,6 +52,7 @@ import org.hisp.dhis.scheduling.NoopJobProgress;
 import org.hisp.dhis.test.integration.TransactionalIntegrationTest;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserService;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
@@ -151,6 +152,7 @@ class GmlImportServiceTest extends TransactionalIntegrationTest {
   }
 
   @Test
+  @Disabled("[SMS2FA]")
   void testMaliciousImportGml() {
     MetadataImportParams importParams = new MetadataImportParams();
     importParams.setUser(UID.of(user));

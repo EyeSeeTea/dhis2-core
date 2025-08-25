@@ -35,23 +35,27 @@ import java.util.Set;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import org.hisp.dhis.common.IdentifiableObject;
+import org.hisp.dhis.common.UidObject;
+import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.hisp.dhis.user.UserDetailsImpl.UserDetailsImplBuilder;
 import org.springframework.security.core.GrantedAuthority;
 
-public interface UserDetails extends org.springframework.security.core.userdetails.UserDetails {
-
-  // TODO MAS: This is a workaround and usually indicated a design flaw, and that we should refactor
-  // to use UserDetails higher up in the layers.
+public interface UserDetails
+    extends org.springframework.security.core.userdetails.UserDetails, UidObject {
 
   /**
    * Create UserDetails from User
+   *
+   * <p>TODO MAS: This is a workaround and usually indicated a design flaw, and that we should
+   * refactor // to use UserDetails higher up in the layers.
    *
    * @param user user to convert
    * @return UserDetails
    */
   @CheckForNull
   static UserDetails fromUser(@CheckForNull User user) {
-    // TODO check in session if a UserDetails for the user already exists (if the user is the
+    // TODO check in session if a UserDetails for the user already exists (if the
+    // user is the
     // current user)
     if (user == null) {
       return null;
@@ -128,11 +132,14 @@ public interface UserDetails extends org.springframework.security.core.userdetai
         UserDetailsImpl.builder()
             .id(user.getId())
             .uid(user.getUid())
+            .code(user.getCode())
             .username(user.getUsername())
             .password(user.getPassword())
             .externalAuth(user.isExternalAuth())
             .isTwoFactorEnabled(user.isTwoFactorEnabled())
-            .code(user.getCode())
+            .twoFactorType(user.getTwoFactorType())
+            .secret(user.getSecret())
+            .isEmailVerified(user.isEmailVerified())
             .firstName(user.getFirstName())
             .surname(user.getSurname())
             .enabled(user.isEnabled())
@@ -204,6 +211,9 @@ public interface UserDetails extends org.springframework.security.core.userdetai
 
   boolean isSuper();
 
+  String getSecret();
+
+  @Override
   String getUid();
 
   Long getId();
@@ -244,6 +254,10 @@ public interface UserDetails extends org.springframework.security.core.userdetai
   boolean isExternalAuth();
 
   boolean isTwoFactorEnabled();
+
+  TwoFactorType getTwoFactorType();
+
+  boolean isEmailVerified();
 
   boolean hasAnyRestrictions(Collection<String> restrictions);
 

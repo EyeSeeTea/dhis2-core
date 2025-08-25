@@ -85,8 +85,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityConfigurerAdapter;
 import org.springframework.security.config.annotation.web.configurers.ExpressionUrlAuthorizationConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.session.SessionRegistry;
-import org.springframework.security.core.session.SessionRegistryImpl;
 import org.springframework.security.oauth2.config.annotation.configurers.ClientDetailsServiceConfigurer;
 import org.springframework.security.oauth2.config.annotation.web.configuration.AuthorizationServerConfigurer;
 import org.springframework.security.oauth2.config.annotation.web.configuration.AuthorizationServerEndpointsConfiguration;
@@ -138,11 +136,6 @@ public class DhisWebApiWebSecurityConfig {
   }
 
   @Autowired public DataSource dataSource;
-
-  @Bean
-  public SessionRegistry sessionRegistry() {
-    return new SessionRegistryImpl();
-  }
 
   @Bean
   public RequestCache requestCache() {
@@ -439,7 +432,8 @@ public class DhisWebApiWebSecurityConfig {
       }
 
       authorize
-          // Temporary solution for Struts less login page, will be removed when apps are fully
+          // Temporary solution for Struts less login page, will be removed when apps are
+          // fully
           // migrated
           .antMatchers("/index.html")
           .permitAll()

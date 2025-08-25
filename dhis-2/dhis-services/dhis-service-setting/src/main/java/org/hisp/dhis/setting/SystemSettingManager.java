@@ -218,4 +218,9 @@ public interface SystemSettingManager extends SystemSettingsProvider {
   default Integer credentialsExpires() {
     return getIntegerSetting(SettingKey.CREDENTIALS_EXPIRES);
   }
+
+  // [SMS2FA]
+  default boolean getEnforceVerifiedEmail() {
+    return getBooleanSetting(SettingKey.ENFORCE_VERIFIED_EMAIL);
+  }
 }

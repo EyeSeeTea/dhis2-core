@@ -43,6 +43,17 @@ public class HashUtils {
     throw new IllegalStateException("Utility class");
   }
 
+  // [SMS2FA]
+  /**
+   * Calculates a SHA1 hash for the given input string.
+   *
+   * @param bytes the input string.
+   * @return the hash.
+   */
+  public static String hashSHA1(@Nonnull byte[] bytes) {
+    return Hashing.sha1().hashBytes(bytes).toString();
+  }
+
   /**
    * Calculates a SHA256 hash for the given input string.
    *

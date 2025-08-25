@@ -55,11 +55,18 @@ import java.util.Set;
 import org.hisp.dhis.common.DeleteNotAllowedException;
 import org.hisp.dhis.common.IdentifiableObjectManager;
 import org.hisp.dhis.dataelement.DataElement;
-import org.hisp.dhis.dataelement.DataElementService;
+import org.hisp.dhis.feedback.ConflictException;
 import org.hisp.dhis.feedback.ErrorReport;
+import org.hisp.dhis.feedback.ForbiddenException;
+import org.hisp.dhis.feedback.NotFoundException;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.organisationunit.OrganisationUnitService;
 import org.hisp.dhis.security.PasswordManager;
+import org.hisp.dhis.security.twofa.TwoFactorAuthService;
+// [SMS2FA]
+// import org.hisp.dhis.setting.SystemSettingsService;
+// import org.hisp.dhis.test.integration.PostgresIntegrationTestBase;
+// import org.junit.jupiter.api.BeforeAll;
 import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.test.integration.SingleSetupIntegrationTestBase;
 import org.junit.jupiter.api.BeforeEach;
@@ -85,7 +92,8 @@ class UserServiceTest extends SingleSetupIntegrationTestBase {
 
   @Autowired private PasswordManager passwordManager;
 
-  @Autowired private DataElementService dataElementService;
+  @Autowired private TwoFactorAuthService twoFactorAuthService;
+
   private OrganisationUnit unitA;
 
   private OrganisationUnit unitB;
@@ -635,21 +643,23 @@ class UserServiceTest extends SingleSetupIntegrationTestBase {
   }
 
   @Test
-  void testDisableTwoFaWithAdminUser() {
+  void testDisableTwoFaWithAdminUser()
+      throws ForbiddenException, NotFoundException, ConflictException {
     User userToModify = createAndAddUser("A");
-    userService.generateTwoFactorOtpSecretForApproval(userToModify);
+    twoFactorAuthService.enrollTOTP2FA(userToModify.getUsername());
     userService.updateUser(userToModify);
 
     User admin = createAndAddAdminUser("ALL");
     List<ErrorReport> errors = new ArrayList<>();
-    userService.privilegedTwoFactorDisable(admin, userToModify.getUid(), errors::add);
+    twoFactorAuthService.privileged2FADisable(getAdminUser(), userToModify.getUid(), errors::add);
     assertTrue(errors.isEmpty());
   }
 
   @Test
-  void testDisableTwoFaWithManageUser() {
+  void testDisableTwoFaWithManageUser()
+      throws ForbiddenException, ConflictException, NotFoundException {
     User userToModify = createAndAddUser("A");
-    userService.generateTwoFactorOtpSecretForApproval(userToModify);
+    twoFactorAuthService.enrollTOTP2FA(userToModify.getUsername());
 
     UserGroup userGroupA = createUserGroup('A', Sets.newHashSet(userToModify));
     userGroupService.addUserGroup(userGroupA);
@@ -667,7 +677,7 @@ class UserServiceTest extends SingleSetupIntegrationTestBase {
     userService.updateUser(currentUser);
 
     List<ErrorReport> errors = new ArrayList<>();
-    userService.privilegedTwoFactorDisable(currentUser, userToModify.getUid(), errors::add);
+    twoFactorAuthService.privileged2FADisable(currentUser, userToModify.getUid(), errors::add);
     assertTrue(errors.isEmpty());
   }
 

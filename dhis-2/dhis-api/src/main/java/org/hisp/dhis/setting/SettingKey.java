@@ -302,6 +302,9 @@ public enum SettingKey {
    */
   GLOBAL_SHELL_APP_NAME("globalShellAppName", "global-app-shell", String.class, false, false),
 
+  /** [SMS2FA] Indicates if email verification is enforced */
+  ENFORCE_VERIFIED_EMAIL("enforceVerifiedEmail", Boolean.FALSE, Boolean.class, false, false),
+
   NOTIFIER_LOG_LEVEL("notifierLogLevel", NotificationLevel.DEBUG, NotificationLevel.class),
   NOTIFIER_MAX_MESSAGES_PER_JOB("notifierMaxMessagesPerJob", 500, Integer.class),
   NOTIFIER_MAX_AGE_DAYS("notifierMaxAgeDays", 7, Integer.class),

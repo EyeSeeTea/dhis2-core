@@ -301,7 +301,8 @@
       <artifactId>spring-ldap-core</artifactId>
     </dependency>
 
-    <!--Spring Security -->
+    <!--Spring
+    Security -->
 
     <dependency>
       <groupId>org.springframework.security</groupId>

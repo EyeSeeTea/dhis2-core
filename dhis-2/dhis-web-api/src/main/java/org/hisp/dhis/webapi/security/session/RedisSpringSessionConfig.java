@@ -28,8 +28,6 @@
 package org.hisp.dhis.webapi.security.session;
 
 import org.hisp.dhis.condition.RedisEnabledCondition;
-import org.hisp.dhis.external.conf.ConfigurationKey;
-import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Conditional;
@@ -57,9 +55,7 @@ import org.springframework.session.web.http.DefaultCookieSerializer;
 @Order(1998)
 @Conditional(RedisEnabledCondition.class)
 @EnableRedisHttpSession
-public class RedisSpringSessionConfiguration {
-
-  @Autowired private DhisConfigurationProvider config;
+public class RedisSpringSessionConfig {
 
   @Bean
   public RedisIndexedSessionRepository sessionRepository(
@@ -73,10 +69,6 @@ public class RedisSpringSessionConfiguration {
     redisTemplate.afterPropertiesSet();
     RedisIndexedSessionRepository repository = new RedisIndexedSessionRepository(redisTemplate);
     repository.setDefaultSerializer(new JdkSerializationRedisSerializer());
-
-    int sessionTimeout =
-        Integer.parseInt(config.getProperty(ConfigurationKey.SYSTEM_SESSION_TIMEOUT));
-    repository.setDefaultMaxInactiveInterval(sessionTimeout);
     return repository;
   }
 
@@ -103,6 +95,7 @@ public class RedisSpringSessionConfiguration {
     return ConfigureRedisAction.NO_OP;
   }
 
+  // [SMS2FA]
   @Bean
   public HttpSessionEventPublisher httpSessionEventPublisher() {
     return new HttpSessionEventPublisher();
