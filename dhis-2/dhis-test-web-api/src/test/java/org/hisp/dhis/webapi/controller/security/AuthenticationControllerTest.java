@@ -82,7 +82,7 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
             .as(JsonLoginResponse.class);
 
     assertEquals("SUCCESS", response.getLoginStatus());
-    assertEquals("/dhis-web-dashboard", response.getRedirectUrl());
+    assertEquals("/dhis-web-dashboard/", response.getRedirectUrl());
   }
 
   @Test
@@ -159,7 +159,7 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
 
     // This will initiate TOTP 2FA enrolment.
     mvc.perform(
-            get("/api/2fa/qrCode")
+            get("/2fa/qrCode")
                 .header("Authorization", "Basic dXNlcmE6ZGlzdHJpY3Q=")
                 .contentType("application/octet-stream")
                 .accept("application/octet-stream"))
@@ -276,6 +276,6 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
             .content(HttpStatus.OK)
             .as(JsonLoginResponse.class);
     assertEquals("SUCCESS", ok2FaCodeResponse.getLoginStatus());
-    assertEquals("/dhis-web-dashboard", ok2FaCodeResponse.getRedirectUrl());
+    assertEquals("/dhis-web-dashboard/", ok2FaCodeResponse.getRedirectUrl());
   }
 }
