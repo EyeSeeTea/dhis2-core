@@ -496,10 +496,10 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
   public Map<String, String> getActiveUserGroupUserEmailsByUsername(String userGroupId) {
     String sql =
         """
-            select u.username, u.email from userinfo u
-            where u.email is not null
-            and u.disabled = false and u.userinfoid in (select m.userid from usergroup g inner join usergroupmembers m on m.usergroupid = g.usergroupid where g.uid = :group);
-            """;
+        select u.username, u.email from userinfo u
+        where u.email is not null
+        and u.disabled = false and u.userinfoid in (select m.userid from usergroup g inner join usergroupmembers m on m.usergroupid = g.usergroupid where g.uid = :group);
+        """;
     NativeQuery<?> emailsByUsername =
         nativeSynchronizedQuery(sql)
             .addSynchronizedEntityClass(UserGroup.class)
@@ -646,10 +646,10 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
       @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull Set<UID> uids) {
     return getQuery(
             """
-        select distinct u from User u
-        left join fetch u.%s ous
-        where ous.uid in :uids
-        """
+            select distinct u from User u
+            left join fetch u.%s ous
+            where ous.uid in :uids
+            """
                 .formatted(orgUnitProperty.getValue()))
         .setParameter("uids", UID.toValueList(uids))
         .getResultList();

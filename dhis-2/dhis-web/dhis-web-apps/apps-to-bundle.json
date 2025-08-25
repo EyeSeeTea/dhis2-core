@@ -25,6 +25,6 @@
   "https://github.com/d2-ci/translations-app#v100.0.11",
   "https://github.com/d2-ci/usage-analytics-app#v101.1.2",
   "https://github.com/d2-ci/user-app#v100.8.3",
-  "https://github.com/d2-ci/user-profile-app#v100.7.6",
-  "https://github.com/d2-ci/login-app#v100.4.4"
+  "local:/path/to/local/apps/cloned-repo-and-built/user-profile-app",
+  "local:/path/to/local/apps/cloned-repo-and-built/login-app"
 ]

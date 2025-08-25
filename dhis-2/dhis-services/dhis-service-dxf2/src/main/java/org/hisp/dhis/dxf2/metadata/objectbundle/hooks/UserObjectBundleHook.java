@@ -139,10 +139,17 @@ public class UserObjectBundleHook extends AbstractObjectBundleHook<User> {
     if (existingUser != null
         && existingUser.getTwoFactorType() != null
         && existingUser.getTwoFactorType().equals(TwoFactorType.EMAIL_ENABLED)
-        && existingUser.isEmailVerified()
-        && user.getEmail() != null
-        && !existingUser.getVerifiedEmail().equals(user.getEmail())) {
+        && !existingUser.getEmail().equals(user.getEmail())) {
       addReports.accept(new ErrorReport(User.class, ErrorCode.E3052).setErrorProperty("email"));
+    }
+
+    if (existingUser != null
+        && existingUser.getTwoFactorType() != null
+        && existingUser.getTwoFactorType().equals(TwoFactorType.SMS_ENABLED)
+        && existingUser.getPhoneNumber() != null
+        && !existingUser.getPhoneNumber().equals(user.getPhoneNumber())) {
+      addReports.accept(
+          new ErrorReport(User.class, ErrorCode.E3152).setErrorProperty("phoneNumber"));
     }
   }
 

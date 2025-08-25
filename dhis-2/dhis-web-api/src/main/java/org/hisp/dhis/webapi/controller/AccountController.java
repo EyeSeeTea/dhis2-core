@@ -571,12 +571,14 @@ public class AccountController {
   public void verifyEmail(
       @RequestParam String token, HttpServletRequest request, HttpServletResponse response)
       throws IOException {
+    // [SMS2FA]
+    // ContextUtils.getRootPath(request) is used directly in upstream,
+    // but we want to remove the ending path "/api" here
+    var rootPath = ContextUtils.getRootPath(request).replaceFirst("/api$", "");
     if (userService.verifyEmail(token)) {
-      response.sendRedirect(
-          ContextUtils.getRootPath(request) + "/dhis-web-login/#/email-verification-success");
+      response.sendRedirect(rootPath + "/dhis-web-login/#/email-verification-success");
     } else {
-      response.sendRedirect(
-          ContextUtils.getRootPath(request) + "/dhis-web-login/#/email-verification-failure");
+      response.sendRedirect(rootPath + "/dhis-web-login/#/email-verification-failure");
     }
   }
 
