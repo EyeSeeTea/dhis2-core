@@ -75,6 +75,12 @@ public enum ConfigurationKey {
   /** Node identifier, optional, useful in clusters. */
   NODE_ID("node.id", "", false),
 
+  /**
+   * When true, the node will unconditionally set its node ID during leader election causing it to
+   * win the election as long as it is alive.
+   */
+  NODE_PRIMARY_LEADER("node.primary_leader", "false", false),
+
   /** Encryption password (sensitive). */
   ENCRYPTION_PASSWORD("encryption.password", "", true),
 
@@ -120,13 +126,6 @@ public enum ConfigurationKey {
 
   /** Sets 'hibernate.cache.use_query_cache'. (default: true) */
   USE_QUERY_CACHE("hibernate.cache.use_query_cache", "true", false),
-
-  /**
-   * Sets 'hibernate.hbm2ddl.auto' (default: validate). This can be overridden by the same property
-   * loaded by any class implementing {@link DhisConfigurationProvider} like {@link
-   * DefaultDhisConfigurationProvider} from dhis.conf at runtime
-   */
-  CONNECTION_SCHEMA("connection.schema", "validate", false),
 
   /** Max size of connection pool (default: 80). */
   CONNECTION_POOL_MAX_SIZE("connection.pool.max_size", "80", false),
@@ -260,6 +259,12 @@ public enum ConfigurationKey {
    */
   CONNECTION_POOL_TIMEOUT("connection.pool.timeout", String.valueOf(SECONDS.toMillis(30)), false),
 
+  /**
+   * Hikari DB pool feature. Connection leak detection threshold: Set the maximum number of
+   * milliseconds that a connection can be out of the pool before a message is logged. (default: 0 -
+   * no leak detection)
+   */
+  CONNECTION_POOL_WARN_MAX_AGE("connection.pool.warn_max_age", "0", false),
   /**
    * Analytics Hikari DB pool feature. Connection pool timeout: Set the maximum number of
    * milliseconds that a client will wait for a connection from the pool. (default: 30s)

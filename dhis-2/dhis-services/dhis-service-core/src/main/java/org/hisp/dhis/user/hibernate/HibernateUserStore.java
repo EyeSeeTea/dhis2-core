@@ -493,13 +493,13 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
   }
 
   @Override
-  public Map<String, String> getUserGroupUserEmailsByUsername(String userGroupId) {
+  public Map<String, String> getActiveUserGroupUserEmailsByUsername(String userGroupId) {
     String sql =
         """
-        select u.username, u.email from userinfo u
-        where u.email is not null
-          and u.userinfoid in (select m.userid from usergroup g inner join usergroupmembers m on m.usergroupid = g.usergroupid where g.uid = :group);
-        """;
+            select u.username, u.email from userinfo u
+            where u.email is not null
+            and u.disabled = false and u.userinfoid in (select m.userid from usergroup g inner join usergroupmembers m on m.usergroupid = g.usergroupid where g.uid = :group);
+            """;
     NativeQuery<?> emailsByUsername =
         nativeSynchronizedQuery(sql)
             .addSynchronizedEntityClass(UserGroup.class)
@@ -642,16 +642,16 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
   }
 
   @Override
-  public List<User> getUsersWithOrgUnit(
-      @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull UID uid) {
+  public List<User> getUsersWithOrgUnits(
+      @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull Set<UID> uids) {
     return getQuery(
             """
         select distinct u from User u
         left join fetch u.%s ous
-        where ous.uid = :uid
+        where ous.uid in :uids
         """
                 .formatted(orgUnitProperty.getValue()))
-        .setParameter("uid", uid.getValue())
+        .setParameter("uids", UID.toValueList(uids))
         .getResultList();
   }
 }

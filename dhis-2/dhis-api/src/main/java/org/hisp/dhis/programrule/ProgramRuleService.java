@@ -52,6 +52,17 @@ public interface ProgramRuleService {
   void deleteProgramRule(ProgramRule programRule);
 
   /**
+   * Returns the list of program rules associated with the given program that are not linked to any
+   * specific program stage. Only includes rules with action types supported by the backend rule
+   * engine.
+   *
+   * @param program the program to retrieve rules for
+   * @param types the set of supported {@link ProgramRuleActionType}s
+   * @return a list of applicable {@link ProgramRule}s for enrollment
+   */
+  List<ProgramRule> getProgramRulesForEnrollment(Program program, Set<ProgramRuleActionType> types);
+
+  /**
    * Updates an {@link ProgramRule}.
    *
    * @param programRule The ProgramRule to update.
@@ -97,9 +108,6 @@ public interface ProgramRuleService {
   List<ProgramRule> getAllProgramRule();
 
   List<ProgramRule> getProgramRulesByActionTypes(Program program, Set<ProgramRuleActionType> types);
-
-  List<ProgramRule> getProgramRulesByActionTypes(
-      Program program, Set<ProgramRuleActionType> serverSupportedTypes, String programStageUid);
 
   /**
    * Get validation by {@link Program}

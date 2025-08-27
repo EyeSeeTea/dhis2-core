@@ -34,7 +34,6 @@ import static org.hisp.dhis.analytics.table.JdbcEventAnalyticsTableManager.EXPOR
 import static org.hisp.dhis.commons.util.TextUtils.removeLastComma;
 import static org.hisp.dhis.commons.util.TextUtils.replace;
 import static org.hisp.dhis.db.model.DataType.CHARACTER_11;
-import static org.hisp.dhis.db.model.DataType.CHARACTER_32;
 import static org.hisp.dhis.db.model.DataType.DOUBLE;
 import static org.hisp.dhis.db.model.DataType.GEOMETRY;
 import static org.hisp.dhis.db.model.DataType.INTEGER;
@@ -136,30 +135,6 @@ public class JdbcTeiEnrollmentsAnalyticsTableManager extends AbstractJdbcTableMa
                   "case when 'POINT' = GeometryType(pi.geometry) then ST_Y(pi.geometry) end")
               .build(),
           AnalyticsTableColumn.builder()
-              .name("uidlevel1")
-              .dataType(CHARACTER_11)
-              .nullable(NULL)
-              .selectExpression("ous.uidlevel1")
-              .build(),
-          AnalyticsTableColumn.builder()
-              .name("uidlevel2")
-              .dataType(CHARACTER_11)
-              .nullable(NULL)
-              .selectExpression("ous.uidlevel2")
-              .build(),
-          AnalyticsTableColumn.builder()
-              .name("uidlevel3")
-              .dataType(CHARACTER_11)
-              .nullable(NULL)
-              .selectExpression("ous.uidlevel3")
-              .build(),
-          AnalyticsTableColumn.builder()
-              .name("uidlevel4")
-              .dataType(CHARACTER_11)
-              .nullable(NULL)
-              .selectExpression("ous.uidlevel4")
-              .build(),
-          AnalyticsTableColumn.builder()
               .name("ou")
               .dataType(CHARACTER_11)
               .nullable(NULL)
@@ -173,7 +148,7 @@ public class JdbcTeiEnrollmentsAnalyticsTableManager extends AbstractJdbcTableMa
               .build(),
           AnalyticsTableColumn.builder()
               .name("oucode")
-              .dataType(CHARACTER_32)
+              .dataType(VARCHAR_50)
               .nullable(NULL)
               .selectExpression("ou.code")
               .build(),
@@ -247,6 +222,7 @@ public class JdbcTeiEnrollmentsAnalyticsTableManager extends AbstractJdbcTableMa
     List<AnalyticsTableColumn> columns = new ArrayList<>();
     columns.addAll(FIXED_COLS);
     columns.add(getOrganisationUnitNameHierarchyColumn());
+    columns.addAll(getOrganisationUnitLevelColumns());
 
     return columns;
   }

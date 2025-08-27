@@ -30,6 +30,7 @@ package org.hisp.dhis.user;
 import static org.hisp.dhis.util.DateUtils.parseDate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -227,17 +228,21 @@ class UserStoreTest extends SingleSetupIntegrationTestBase {
   }
 
   @Test
-  void testGetUserGroupUserEmailsByUsername() {
+  void testGetActiveUserGroupUserEmailsByUsername() {
     User userA = makeUser("A");
+    userA.setDisabled(true);
     User userB = makeUser("B");
     userStore.save(userA);
     userStore.save(userB);
+
     UserGroup group = createUserGroup('A', Set.of(userA, userB));
     userGroupService.addUserGroup(group);
 
     Map<String, String> emailsByUsername =
-        userStore.getUserGroupUserEmailsByUsername(group.getUid());
-    assertEquals(Map.of("usernamea", "emaila", "usernameb", "emailb"), emailsByUsername);
+        userStore.getActiveUserGroupUserEmailsByUsername(group.getUid());
+
+    assertNotEquals(Map.of("usernamea", "emaila", "usernameb", "emailb"), emailsByUsername);
+    assertEquals(Map.of("usernameb", "emailb"), emailsByUsername);
   }
 
   @Test
@@ -294,7 +299,8 @@ class UserStoreTest extends SingleSetupIntegrationTestBase {
     userService.addUser(user4);
 
     // when retrieving users by org unit uid
-    List<User> users = userStore.getUsersWithOrgUnit(UserOrgUnitProperty.ORG_UNITS, UID.of(ou1));
+    List<User> users =
+        userStore.getUsersWithOrgUnits(UserOrgUnitProperty.ORG_UNITS, Set.of(UID.of(ou1)));
     // getting each org unit to assert later that no other select queries triggered
     users.forEach(
         u ->

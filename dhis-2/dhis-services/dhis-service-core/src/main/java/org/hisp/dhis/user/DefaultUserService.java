@@ -510,6 +510,12 @@ public class DefaultUserService implements UserService {
   }
 
   @Override
+  @Transactional
+  public void updateUserRole(UserRole userRole, UserDetails userDetails) {
+    userRoleStore.update(userRole, userDetails);
+  }
+
+  @Override
   @Transactional(readOnly = true)
   public UserRole getUserRole(String uid) {
     return userRoleStore.getByUid(uid);
@@ -845,8 +851,8 @@ public class DefaultUserService implements UserService {
 
   @Override
   @Transactional(readOnly = true)
-  public Map<String, String> getUserGroupUserEmailsByUsername(String userGroupId) {
-    return userStore.getUserGroupUserEmailsByUsername(userGroupId);
+  public Map<String, String> getActiveUserGroupUserEmailsByUsername(String userGroupId) {
+    return userStore.getActiveUserGroupUserEmailsByUsername(userGroupId);
   }
 
   @Override
@@ -1503,9 +1509,9 @@ public class DefaultUserService implements UserService {
   }
 
   @Override
-  public List<User> getUsersWithOrgUnit(
-      @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull UID uid) {
-    return userStore.getUsersWithOrgUnit(orgUnitProperty, uid);
+  public List<User> getUsersWithOrgUnits(
+      @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull Set<UID> uids) {
+    return userStore.getUsersWithOrgUnits(orgUnitProperty, uids);
   }
 
   @Override

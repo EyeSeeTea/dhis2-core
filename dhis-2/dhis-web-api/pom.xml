@@ -5,7 +5,7 @@
   <parent>
     <groupId>org.hisp.dhis</groupId>
     <artifactId>dhis</artifactId>
-    <version>2.41.3.1-eyeseetea-fork-1</version>
+    <version>2.41.5</version>
   </parent>
 
   <artifactId>dhis-web-api</artifactId>
@@ -116,6 +116,10 @@
     <dependency>
       <groupId>org.springframework.security</groupId>
       <artifactId>spring-security-ldap</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.data</groupId>
+      <artifactId>spring-data-redis</artifactId>
     </dependency>
     <dependency>
       <groupId>org.apache.jclouds</groupId>

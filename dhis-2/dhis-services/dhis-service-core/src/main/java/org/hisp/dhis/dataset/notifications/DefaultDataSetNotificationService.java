@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +45,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -71,6 +73,7 @@ import org.hisp.dhis.program.message.ProgramMessageService;
 import org.hisp.dhis.scheduling.JobProgress;
 import org.hisp.dhis.scheduling.NoopJobProgress;
 import org.hisp.dhis.user.User;
+import org.hisp.dhis.user.UserDetails;
 import org.hisp.dhis.user.UserGroup;
 import org.hisp.dhis.util.DateUtils;
 import org.springframework.stereotype.Service;
@@ -229,7 +232,8 @@ public class DefaultDataSetNotificationService implements DataSetNotificationSer
 
   private MessageBatch createBatchForCompletionNotifications(
       CompleteDataSetRegistration registration, Collection<DataSetNotificationTemplate> templates) {
-    return createMessageBatch(templates.stream().map(t -> Map.of(registration, t)).toList());
+    return createMessageBatch(
+        templates.stream().map(t -> Map.of(registration, t)).collect(Collectors.toList()));
   }
 
   private String createSubjectString(DataSetNotificationTemplate template) {
@@ -432,8 +436,11 @@ public class DefaultDataSetNotificationService implements DataSetNotificationSer
 
   private Set<User> resolveInternalRecipients(DataSetNotificationTemplate template) {
     UserGroup userGroup = template.getRecipientUserGroup();
-
-    return userGroup == null ? Set.of() : userGroup.getMembers();
+    return userGroup == null
+        ? Set.of()
+        : userGroup.getMembers().stream()
+            .filter(user -> !user.isDisabled())
+            .collect(Collectors.toSet());
   }
 
   private Set<User> resolveInternalRecipients(
@@ -444,18 +451,30 @@ public class DefaultDataSetNotificationService implements DataSetNotificationSer
       return Set.of();
     }
 
-    return userGroup.getMembers().stream()
-        .filter(
-            user ->
-                organisationUnitService.isInUserHierarchy(
-                    registration.getSource().getUid(), user.getOrganisationUnits()))
-        .collect(toSet());
+    Set<User> recipients = new HashSet<>();
+    for (User user : userGroup.getMembers()) {
+      if (user != null
+          && !user.isDisabled()
+          && UserDetails.isInUserHierarchy(
+              registration.getSource().getPath(),
+              user.getOrganisationUnits().stream()
+                  .map(OrganisationUnit::getUid)
+                  .collect(toSet()))) {
+        recipients.add(user);
+      }
+    }
+    return recipients;
   }
 
   private void sendInternalDhisMessages(
       String type, List<DhisMessage> messages, JobProgress progress) {
     progress.startingStage(
         "Dispatching DHIS " + type + " notification messages", messages.size(), SKIP_ITEM_OUTLIER);
+
+    // filter out messages without recipients
+    messages =
+        messages.stream().filter(msg -> !msg.recipients.isEmpty()).collect(Collectors.toList());
+
     progress.runStage(
         messages,
         msg -> msg.message.getSubject(),

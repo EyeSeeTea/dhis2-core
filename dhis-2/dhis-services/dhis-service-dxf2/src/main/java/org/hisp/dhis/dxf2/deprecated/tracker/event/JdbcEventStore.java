@@ -486,7 +486,8 @@ public class JdbcEventStore implements EventStore {
               Note note = new Note();
               note.setNote(resultSet.getString("psinote_uid"));
               note.setValue(resultSet.getString("psinote_value"));
-              note.setStoredDate(DateUtils.toIso8601NoTz(resultSet.getDate("psinote_storeddate")));
+              note.setStoredDate(
+                  DateUtils.toIso8601NoTz(resultSet.getTimestamp("psinote_storeddate")));
               note.setStoredBy(resultSet.getString("psinote_storedby"));
 
               if (resultSet.getObject("usernote_id") != null) {
@@ -501,7 +502,7 @@ public class JdbcEventStore implements EventStore {
                         resultSet.getString("userinfo_surname")));
               }
 
-              note.setLastUpdated(resultSet.getDate("psinote_lastupdated"));
+              note.setLastUpdated(resultSet.getTimestamp("psinote_lastupdated"));
 
               event.getNotes().add(note);
               notes.add(resultSet.getString("psinote_id"));
@@ -712,7 +713,8 @@ public class JdbcEventStore implements EventStore {
               Note note = new Note();
               note.setNote(resultSet.getString("psinote_uid"));
               note.setValue(resultSet.getString("psinote_value"));
-              note.setStoredDate(DateUtils.toIso8601NoTz(resultSet.getDate("psinote_storeddate")));
+              note.setStoredDate(
+                  DateUtils.toIso8601NoTz(resultSet.getTimestamp("psinote_storeddate")));
               note.setStoredBy(resultSet.getString("psinote_storedby"));
 
               eventRow.getNotes().add(note);
@@ -950,7 +952,7 @@ public class JdbcEventStore implements EventStore {
           .append(AND)
           .append(teaCol + ".UID")
           .append(EQUALS)
-          .append(SqlUtils.singleQuote(queryItem.getItem().getUid()));
+          .append(SqlUtils.singleQuoteAndEscape(queryItem.getItem().getUid()));
 
       attributes.append(getAttributeFilterQuery(queryItem, teaCol, teaValueCol));
     }
@@ -975,7 +977,7 @@ public class JdbcEventStore implements EventStore {
                 NUMERIC_TYPES.stream()
                     .map(Enum::name)
                     .map(StringUtils::lowerCase)
-                    .map(SqlUtils::singleQuote)
+                    .map(SqlUtils::singleQuoteAndEscape)
                     .collect(Collectors.joining(",")))
             .append(")")
             .append(" then ");
@@ -2143,7 +2145,7 @@ public class JdbcEventStore implements EventStore {
 
   private String createDescendantsSql(
       UserDetails user, EventSearchParams params, MapSqlParameterSource mapSqlParameterSource) {
-    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getPath());
+    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getStoredPath());
 
     if (isProgramRestricted(params.getProgram())) {
       return createCaptureScopeQuery(
@@ -2156,7 +2158,7 @@ public class JdbcEventStore implements EventStore {
 
   private String createChildrenSql(
       UserDetails user, EventSearchParams params, MapSqlParameterSource mapSqlParameterSource) {
-    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getPath());
+    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getStoredPath());
 
     String customChildrenQuery =
         " AND (ou.hierarchylevel = "
@@ -2179,7 +2181,7 @@ public class JdbcEventStore implements EventStore {
 
   private String createSelectedSql(
       UserDetails user, EventSearchParams params, MapSqlParameterSource mapSqlParameterSource) {
-    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getPath());
+    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getStoredPath());
 
     String orgUnitPathEqualsMatchQuery =
         " ou.path = :"

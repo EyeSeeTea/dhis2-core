@@ -192,11 +192,13 @@ public enum JobType {
    * @return when true, the {@link JobConfiguration#getExecutedBy()} is set to the job creator on
    *     creation unless it was set explicitly
    */
-  public boolean isDefaultExecutedByCreator() {
-    return this == HTML_PUSH_ANALYTICS;
+  public boolean isValidUserRequiredForJob() {
+    return this == HTML_PUSH_ANALYTICS || this == AGGREGATE_DATA_EXCHANGE;
   }
 
   /**
+   * @implNote since 2.42 all jobs forward to the {@code Notifier} but those not included here use
+   *     {@link org.hisp.dhis.system.notification.NotificationLevel#ERROR}.
    * @return true, if {@link JobProgress} events should be forwarded to the {@link
    *     org.eclipse.emf.common.notify.Notifier} API, otherwise false
    */

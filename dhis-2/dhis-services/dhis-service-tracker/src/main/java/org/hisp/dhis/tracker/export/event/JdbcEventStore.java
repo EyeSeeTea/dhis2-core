@@ -28,11 +28,16 @@
 package org.hisp.dhis.tracker.export.event;
 
 import static java.util.Map.entry;
+import static org.hisp.dhis.common.QueryFilter.affixLikeWildcards;
+import static org.hisp.dhis.common.QueryFilter.getFilterItems;
 import static org.hisp.dhis.common.ValueType.NUMERIC_TYPES;
 import static org.hisp.dhis.system.util.SqlUtils.castToNumber;
+import static org.hisp.dhis.system.util.SqlUtils.escapeLikeWildcards;
+import static org.hisp.dhis.system.util.SqlUtils.escapeSingleQuotes;
 import static org.hisp.dhis.system.util.SqlUtils.lower;
 import static org.hisp.dhis.system.util.SqlUtils.quote;
 import static org.hisp.dhis.system.util.SqlUtils.singleQuote;
+import static org.hisp.dhis.system.util.SqlUtils.singleQuoteAndEscape;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -53,11 +58,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.function.LongSupplier;
 import java.util.stream.Collectors;
+import javax.annotation.Nonnull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
@@ -500,7 +504,7 @@ class JdbcEventStore implements EventStore {
 
     StringBuilder sqlBuilder = new StringBuilder();
 
-    String ouTableName = getOuTableName(params);
+    String ouTableName = " evou";
 
     sqlBuilder.append(
         getIdSqlBasedOnIdScheme(
@@ -526,9 +530,9 @@ class JdbcEventStore implements EventStore {
     sqlBuilder.append(
         getIdSqlBasedOnIdScheme(
             idSchemes.getCategoryOptionComboIdScheme(),
-            "coc.uid as coc_identifier, ",
-            "coc.attributevalues #>> '{%s, value}' as coc_identifier, ",
-            "coc.code as coc_identifier, "));
+            "coc_agg.uid as coc_identifier, ",
+            "coc_agg.attributevalues #>> '{%s, value}' as coc_identifier, ",
+            "coc_agg.code as coc_identifier, "));
 
     return sqlBuilder.toString();
   }
@@ -640,7 +644,7 @@ class JdbcEventStore implements EventStore {
           .append(AND)
           .append(teaCol + ".UID")
           .append(EQUALS)
-          .append(singleQuote(teaUid));
+          .append(singleQuoteAndEscape(teaUid));
 
       sql.append(
           getAttributeFilterQuery(
@@ -671,7 +675,7 @@ class JdbcEventStore implements EventStore {
               NUMERIC_TYPES.stream()
                   .map(Enum::name)
                   .map(StringUtils::lowerCase)
-                  .map(SqlUtils::singleQuote)
+                  .map(SqlUtils::singleQuoteAndEscape)
                   .collect(Collectors.joining(",")))
           .append(")")
           .append(" then ");
@@ -680,12 +684,10 @@ class JdbcEventStore implements EventStore {
     List<String> filterStrings = new ArrayList<>();
     for (QueryFilter filter : filters) {
       StringBuilder filterString = new StringBuilder();
+
       final String queryCol =
           isNumericTea ? castToNumber(teaValueCol + ".value") : lower(teaValueCol + ".value");
-      final Object encodedFilter =
-          isNumericTea
-              ? Double.valueOf(filter.getFilter())
-              : StringUtils.lowerCase(filter.getSqlFilter(filter.getFilter()));
+      final Object encodedFilter = parseFilterValue(isNumericTea, filter);
       filterString
           .append(queryCol)
           .append(SPACE)
@@ -701,6 +703,44 @@ class JdbcEventStore implements EventStore {
     }
 
     return query.toString();
+  }
+
+  @Nonnull
+  private static Object parseFilterValue(boolean isNumericTea, QueryFilter filter) {
+    final Object encodedFilter;
+    // pre-process values
+    // so far all DHIS2 operators are implemented using case-insensitive matching in tracker, so
+    // ILIKE == LIKE, EQ == IEQ, ...
+    String value = filter.getFilter().toLowerCase();
+    QueryOperator operator = filter.getOperator();
+    if (operator.isIn()) {
+      if (isNumericTea) {
+        encodedFilter =
+            getFilterItems(value).stream()
+                .map(i -> Double.valueOf(i).toString())
+                .collect(Collectors.joining(",", "(", ")"));
+      } else {
+        // we need to escape single quotes and wrap the string in single quotes as we are not using
+        // JDBC parameters like >=v42 in which
+        // case this would be done for us
+        encodedFilter =
+            getFilterItems(escapeSingleQuotes(value)).stream()
+                .map(SqlUtils::singleQuote)
+                .collect(Collectors.joining(",", "(", ")"));
+      }
+    } else if (operator.isLikeBased()) {
+      // we need to escape single quotes as we are not using JDBC parameters like >=v42 in which
+      // case this would be done for us
+      encodedFilter =
+          singleQuote(affixLikeWildcards(operator, escapeLikeWildcards(escapeSingleQuotes(value))));
+    } else {
+      if (isNumericTea) {
+        encodedFilter = Double.valueOf(filter.getFilter());
+      } else {
+        encodedFilter = singleQuote(escapeSingleQuotes(value));
+      }
+    }
+    return encodedFilter;
   }
 
   /**
@@ -797,20 +837,12 @@ class JdbcEventStore implements EventStore {
             .append("au.username as ")
             .append(COLUMN_EVENT_ASSIGNED_USER_USERNAME)
             .append(",")
-            .append("coc.uid as ")
+            .append("coc_agg.uid as ")
             .append(COLUMN_EVENT_ATTRIBUTE_OPTION_COMBO_UID)
             .append(", ")
             .append("coc_agg.co_uids AS co_uids, ")
-            .append("coc_agg.co_count AS option_size, ");
-
-    for (Order order : params.getOrder()) {
-      if (order.getField() instanceof TrackedEntityAttribute tea)
-        selectBuilder
-            .append(quote(tea.getUid()))
-            .append(".value AS ")
-            .append(tea.getUid())
-            .append("_value, ");
-    }
+            .append("coc_agg.co_count AS option_size, ")
+            .append(getOrderFieldsForSelectClause(params.getOrder()));
 
     return selectBuilder
         .append(
@@ -838,17 +870,30 @@ class JdbcEventStore implements EventStore {
         .toString();
   }
 
-  private boolean checkForOwnership(EventQueryParams params) {
-    return Optional.ofNullable(params.getProgram())
-        .filter(
-            p ->
-                Objects.nonNull(p.getProgramType())
-                    && p.getProgramType() == ProgramType.WITH_REGISTRATION)
-        .isPresent();
-  }
+  private String getOrderFieldsForSelectClause(List<Order> orders) {
+    StringBuilder selectBuilder = new StringBuilder();
 
-  private String getOuTableName(EventQueryParams params) {
-    return checkForOwnership(params) ? " evou" : " ou";
+    for (Order order : orders) {
+      if (order.getField() instanceof TrackedEntityAttribute tea) {
+        selectBuilder
+            .append(quote(tea.getUid()))
+            .append(".value AS ")
+            .append(tea.getUid())
+            .append("_value, ");
+      } else if (order.getField() instanceof DataElement de) {
+        final String dataValueValueSql = "ev.eventdatavalues #>> '{" + de.getUid() + ", value}'";
+        selectBuilder
+            .append(
+                de.getValueType().isNumeric()
+                    ? castToNumber(dataValueValueSql)
+                    : lower(dataValueValueSql))
+            .append(" as ")
+            .append(de.getUid())
+            .append(", ");
+      }
+    }
+
+    return selectBuilder.toString();
   }
 
   private StringBuilder getFromWhereClause(
@@ -863,18 +908,13 @@ class JdbcEventStore implements EventStore {
             .append("inner join program p on p.programid=en.programid ")
             .append("inner join programstage ps on ps.programstageid=ev.programstageid ");
 
-    if (checkForOwnership(params)) {
-      fromBuilder
-          .append(
-              "left join trackedentityprogramowner po on (en.trackedentityid=po.trackedentityid) ")
-          .append(
-              "inner join organisationunit evou on (coalesce(po.organisationunitid, ev.organisationunitid)=evou.organisationunitid) ")
-          .append(
-              "inner join organisationunit ou on (ev.organisationunitid=ou.organisationunitid) ");
-    } else {
-      fromBuilder.append(
-          "inner join organisationunit ou on ev.organisationunitid=ou.organisationunitid ");
-    }
+    fromBuilder
+        .append(
+            "left join trackedentityprogramowner po on (en.trackedentityid=po.trackedentityid and en.programid=po.programid) ")
+        .append(
+            "inner join organisationunit evou on (coalesce(po.organisationunitid,"
+                + " ev.organisationunitid)=evou.organisationunitid) ")
+        .append("inner join organisationunit ou on (ev.organisationunitid=ou.organisationunitid) ");
 
     fromBuilder
         .append("left join trackedentity te on te.trackedentityid=en.trackedentityid ")
@@ -1125,7 +1165,7 @@ class JdbcEventStore implements EventStore {
 
   private String createDescendantsSql(
       User user, EventQueryParams params, MapSqlParameterSource mapSqlParameterSource) {
-    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getPath());
+    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getStoredPath());
 
     if (isProgramRestricted(params.getProgram())) {
       return createCaptureScopeQuery(
@@ -1138,7 +1178,7 @@ class JdbcEventStore implements EventStore {
 
   private String createChildrenSql(
       User user, EventQueryParams params, MapSqlParameterSource mapSqlParameterSource) {
-    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getPath());
+    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getStoredPath());
 
     String customChildrenQuery =
         " and (ou.hierarchylevel = "
@@ -1161,7 +1201,7 @@ class JdbcEventStore implements EventStore {
 
   private String createSelectedSql(
       User user, EventQueryParams params, MapSqlParameterSource mapSqlParameterSource) {
-    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getPath());
+    mapSqlParameterSource.addValue(COLUMN_ORG_UNIT_PATH, params.getOrgUnit().getStoredPath());
 
     String orgUnitPathEqualsMatchQuery =
         " ou.path = :"
@@ -1313,7 +1353,7 @@ class JdbcEventStore implements EventStore {
             if (QueryOperator.IN.getValue().equalsIgnoreCase(filter.getSqlOperator())) {
               mapSqlParameterSource.addValue(
                   bindParameter,
-                  QueryFilter.getFilterItems(StringUtils.lowerCase(filter.getFilter())),
+                  getFilterItems(StringUtils.lowerCase(filter.getFilter())),
                   itemType);
 
               eventDataValuesWhereSql.append(inCondition(filter, bindParameter, queryCol));
@@ -1335,7 +1375,7 @@ class JdbcEventStore implements EventStore {
             if (QueryOperator.IN.getValue().equalsIgnoreCase(filter.getSqlOperator())) {
               mapSqlParameterSource.addValue(
                   bindParameter,
-                  QueryFilter.getFilterItems(StringUtils.lowerCase(filter.getFilter())),
+                  getFilterItems(StringUtils.lowerCase(filter.getFilter())),
                   itemType);
 
               optionValueConditionBuilder.append(" and ");
@@ -1357,6 +1397,11 @@ class JdbcEventStore implements EventStore {
             }
           }
         }
+      } else {
+        eventDataValuesWhereSql.append(hlp.whereAnd());
+        eventDataValuesWhereSql.append(" (ev.eventdatavalues ?? '");
+        eventDataValuesWhereSql.append(deUid);
+        eventDataValuesWhereSql.append("') ");
       }
     }
 
@@ -1478,13 +1523,11 @@ class JdbcEventStore implements EventStore {
    */
   private String getCategoryOptionComboQuery(User user) {
     String joinCondition =
-        "inner join categoryoptioncombo coc on coc.categoryoptioncomboid = ev.attributeoptioncomboid "
-            + " inner join lateral (select coc.categoryoptioncomboid as id,"
+        " inner join (select coc.uid, coc.attributevalues, coc.code, coc.categoryoptioncomboid as id,"
             + " string_agg(co.uid, ',') as co_uids, count(co.categoryoptionid) as co_count"
             + " from categoryoptioncombo coc "
             + " inner join categoryoptioncombos_categoryoptions cocco on coc.categoryoptioncomboid = cocco.categoryoptioncomboid"
             + " inner join categoryoption co on cocco.categoryoptionid = co.categoryoptionid"
-            + " where ev.attributeoptioncomboid = coc.categoryoptioncomboid"
             + " group by coc.categoryoptioncomboid ";
 
     if (!isSuper(user)) {

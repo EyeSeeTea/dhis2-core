@@ -35,6 +35,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.experimental.Accessors;
 import org.hisp.dhis.dataset.LockStatus;
+import org.hisp.dhis.minmax.MinMaxValueDto;
 import org.hisp.dhis.webapi.webdomain.dataentry.CompleteStatusDto;
 
 /**

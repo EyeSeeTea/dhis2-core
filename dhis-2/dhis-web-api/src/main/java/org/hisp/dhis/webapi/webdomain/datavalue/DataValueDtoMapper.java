@@ -34,6 +34,7 @@ import org.hisp.dhis.category.CategoryOptionCombo;
 import org.hisp.dhis.datavalue.DataValue;
 import org.hisp.dhis.datavalue.DataValueAudit;
 import org.hisp.dhis.minmax.MinMaxDataElement;
+import org.hisp.dhis.minmax.MinMaxValueDto;
 
 /**
  * Class which provides methods for mapping between domain objcets and DTOs.
@@ -96,10 +97,10 @@ public class DataValueDtoMapper {
   }
 
   /**
-   * Converts a {@link MinMaxDataElement} object to a {@link MinMaxValueDto}.
+   * Converts a {@link MinMaxDataElement} object to a {@link MinMaxValue}.
    *
    * @param value the {@link MinMaxDataElement}.
-   * @return a {@link MinMaxValueDto}.
+   * @return a {@link MinMaxValue}.
    */
   public static MinMaxValueDto toDto(MinMaxDataElement value) {
     return new MinMaxValueDto()
@@ -107,6 +108,7 @@ public class DataValueDtoMapper {
         .setOrgUnit(value.getSource().getUid())
         .setCategoryOptionCombo(value.getOptionCombo().getUid())
         .setMinValue(value.getMin())
-        .setMaxValue(value.getMax());
+        .setMaxValue(value.getMax())
+        .setGenerated(value.isGenerated());
   }
 }

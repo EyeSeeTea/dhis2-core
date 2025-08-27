@@ -60,6 +60,13 @@ public class DefaultProgramRuleService implements ProgramRuleService {
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public List<ProgramRule> getProgramRulesForEnrollment(
+      Program program, Set<ProgramRuleActionType> actionTypes) {
+    return programRuleStore.getProgramRulesForEnrollment(program, actionTypes);
+  }
+
+  @Override
   @Transactional
   public void updateProgramRule(ProgramRule programRule) {
     programRuleStore.update(programRule);
@@ -108,14 +115,6 @@ public class DefaultProgramRuleService implements ProgramRuleService {
   public List<ProgramRule> getProgramRulesByActionTypes(
       Program program, Set<ProgramRuleActionType> actionTypes) {
     return programRuleStore.getProgramRulesByActionTypes(program, actionTypes);
-  }
-
-  @Override
-  @Transactional(readOnly = true)
-  public List<ProgramRule> getProgramRulesByActionTypes(
-      Program program, Set<ProgramRuleActionType> serverSupportedTypes, String programStageUid) {
-    return programRuleStore.getProgramRulesByActionTypes(
-        program, serverSupportedTypes, programStageUid);
   }
 
   @Override
