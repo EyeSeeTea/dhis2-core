@@ -208,9 +208,7 @@ public class JobConfiguration extends BaseIdentifiableObject implements Secondar
   public JobConfiguration(
       @CheckForNull String name, @Nonnull JobType type, @CheckForNull String executedBy) {
     this.name =
-        name == null || name.isEmpty()
-            ? "%s (%d)".formatted(type.name(), Instant.now().toEpochMilli())
-            : name;
+        name == null || name.isEmpty() ? "%s (%d)".formatted(type.name(), System.nanoTime()) : name;
     this.jobType = type;
     this.executedBy = executedBy;
     setAutoFields();
