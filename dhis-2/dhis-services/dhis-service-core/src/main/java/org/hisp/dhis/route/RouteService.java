@@ -119,7 +119,8 @@ public class RouteService {
         new HttpComponentsClientHttpRequestFactory();
     requestFactory.setConnectionRequestTimeout(1_000);
     requestFactory.setConnectTimeout(5_000);
-    requestFactory.setReadTimeout(30_000);
+    // Used by restTemplate in SyncUtils.java. Increase from the default 30 seconds to 20 minutes
+    requestFactory.setReadTimeout(20 * 60_000);
     requestFactory.setBufferRequestBody(true);
 
     PoolingHttpClientConnectionManager connectionManager = new PoolingHttpClientConnectionManager();
