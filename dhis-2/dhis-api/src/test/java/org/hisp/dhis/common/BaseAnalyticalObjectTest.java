@@ -38,16 +38,20 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import org.hisp.dhis.dataelement.DataElement;
 import org.hisp.dhis.dataset.DataSet;
 import org.hisp.dhis.eventchart.EventChart;
 import org.hisp.dhis.eventvisualization.EventVisualization;
 import org.hisp.dhis.mapping.MapView;
 import org.hisp.dhis.option.OptionSet;
+import org.hisp.dhis.period.Period;
+import org.hisp.dhis.period.PeriodType;
 import org.hisp.dhis.program.ProgramStage;
 import org.hisp.dhis.trackedentity.TrackedEntityAttribute;
 import org.hisp.dhis.trackedentity.TrackedEntityAttributeDimension;
@@ -229,6 +233,38 @@ class BaseAnalyticalObjectTest {
     assertEquals(sameDimensionUid, baseDimensionalObject2.getDimension());
     assertNotNull(baseDimensionalObject2.getProgramStage());
     assertEquals(programStage2, baseDimensionalObject2.getProgramStage());
+  }
+
+  @Test
+  void testGetDimensionalObjectPeriodOrderPreservedWhenRawPeriodsCleaned() {
+    Visualization visualization = new Visualization("visualization");
+
+    Period january2023 = PeriodType.getPeriodFromIsoString("202301");
+    Period february2023 = PeriodType.getPeriodFromIsoString("202302");
+    Period march2023 = PeriodType.getPeriodFromIsoString("202303");
+
+    visualization.setPeriods(
+        new ArrayList<>(List.of(january2023, february2023, march2023)));
+    visualization.setRawPeriods(new ArrayList<>());
+
+    Optional<DimensionalObject> periodDimension =
+        visualization.getDimensionalObject(DimensionalObject.PERIOD_DIM_ID);
+
+    assertTrue(periodDimension.isPresent());
+
+    List<String> expectedOrder =
+        visualization.getPeriods().stream()
+            .map(Period::getDimensionItem)
+            .collect(Collectors.toList());
+
+    List<String> actualOrder =
+        ((BaseDimensionalObject) periodDimension.get())
+            .getItems()
+            .stream()
+            .map(DimensionalItemObject::getDimensionItem)
+            .collect(Collectors.toList());
+
+    assertEquals(expectedOrder, actualOrder);
   }
 
   private TrackedEntityDataElementDimension stubTrackedEntityDataElementDimension(

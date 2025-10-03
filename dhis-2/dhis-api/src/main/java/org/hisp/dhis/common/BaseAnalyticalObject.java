@@ -29,7 +29,6 @@ package org.hisp.dhis.common;
 
 import static java.lang.String.format;
 import static java.util.stream.Collectors.toMap;
-import static java.util.stream.Collectors.toSet;
 import static org.apache.commons.collections4.CollectionUtils.isEmpty;
 import static org.apache.commons.collections4.CollectionUtils.isNotEmpty;
 import static org.apache.commons.lang3.StringUtils.EMPTY;
@@ -712,9 +711,9 @@ public abstract class BaseAnalyticalObject extends BaseNameableObject implements
         rawPeriods = new ArrayList<>();
         rawPeriods.addAll(
             getPeriods().stream()
-                .filter(period -> !rawPeriods.contains(period.getDimensionItem()))
-                .map(period -> period.getDimensionItem())
-                .collect(toSet()));
+                .map(Period::getDimensionItem)
+                .distinct()
+                .collect(Collectors.toList()));
       }
 
       if (isNotEmpty(rawPeriods)) {
