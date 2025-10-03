@@ -228,6 +228,10 @@ public class DefaultMetadataExportService implements MetadataExportService {
     Map<Class<? extends IdentifiableObject>, List<? extends IdentifiableObject>> metadata =
         getMetadata(params);
 
+    if (metadata.containsKey(org.hisp.dhis.mapping.Map.class)) {
+      metadata.remove(org.hisp.dhis.mapping.MapView.class);
+    }
+
     for (Map.Entry<Class<? extends IdentifiableObject>, List<? extends IdentifiableObject>> entry :
         metadata.entrySet()) {
       FieldFilterParams<?> fieldFilterParams =
