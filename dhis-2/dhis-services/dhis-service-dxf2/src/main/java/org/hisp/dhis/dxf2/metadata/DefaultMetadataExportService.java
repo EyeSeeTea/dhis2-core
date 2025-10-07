@@ -42,10 +42,10 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.HashSet;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
@@ -253,9 +253,11 @@ public class DefaultMetadataExportService implements MetadataExportService {
     return rootNode;
   }
 
-  private void filterMapViewObjects(Map<Class<? extends IdentifiableObject>, List<? extends IdentifiableObject>> metadata) {
+  private void filterMapViewObjects(
+      Map<Class<? extends IdentifiableObject>, List<? extends IdentifiableObject>> metadata) {
     List<? extends IdentifiableObject> mapObjects = metadata.get(org.hisp.dhis.mapping.Map.class);
-    List<? extends IdentifiableObject> mapViewObjects = metadata.get(org.hisp.dhis.mapping.MapView.class);
+    List<? extends IdentifiableObject> mapViewObjects =
+        metadata.get(org.hisp.dhis.mapping.MapView.class);
 
     if (mapObjects != null && mapViewObjects != null) {
       Set<String> mapViewIdsInMap = new HashSet<>();
@@ -268,7 +270,8 @@ public class DefaultMetadataExportService implements MetadataExportService {
         }
       }
 
-      mapViewObjects = mapViewObjects.stream()
+      mapViewObjects =
+          mapViewObjects.stream()
               .filter(obj -> !mapViewIdsInMap.contains(obj.getUid()))
               .collect(Collectors.toList());
       if (mapViewObjects.isEmpty()) {
