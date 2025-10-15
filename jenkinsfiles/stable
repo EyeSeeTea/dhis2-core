@@ -36,7 +36,7 @@ pipeline {
         DOCKER_IMAGE_NAME = "${DOCKER_HUB_OWNER}/core"
         DOCKER_IMAGE_TAG = "${env.DHIS2_VERSION.replace('SNAPSHOT', 'rc')}"
         DOCKER_IMAGE_NAME_PUBLISH_TARGET = "${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}" // used to publish to Dockerhub
-        BASE_IMAGE = "tomcat:9.0.96-jre17"
+        BASE_IMAGE = "tomcat:9.0.109-jre17"
     }
 
     stages {
@@ -61,9 +61,6 @@ pipeline {
 
         stage('Run api tests') {
             environment {
-                RP_UUID = credentials('report-portal-access-uuid')
-                RP_ENABLE = 'true'
-                RP_ATTRIBUTES = "version:${env.GIT_BRANCH};"
                 IMAGE_REPOSITORY = "$DOCKER_IMAGE_NAME_DEV"
                 DOCKER_IMAGE_NAME_FULL = "${DOCKER_IMAGE_NAME_DEV}:${DOCKER_IMAGE_TAG}"
             }

@@ -558,7 +558,7 @@ public abstract class BaseAnalyticalObject extends BaseNameableObject implements
 
       if (hasRelativePeriods()) {
         items.addAll(
-            relatives.getRelativePeriods(date, format, dynamicNames, FINANCIAL_YEAR_OCTOBER));
+            getRelatives().getRelativePeriods(date, format, dynamicNames, FINANCIAL_YEAR_OCTOBER));
       }
 
       type = DimensionType.PERIOD;
@@ -1334,7 +1334,6 @@ public abstract class BaseAnalyticalObject extends BaseNameableObject implements
   }
 
   @JsonProperty
-  @JsonIgnore
   @JacksonXmlElementWrapper(localName = "rawPeriods", namespace = DxfNamespaces.DXF_2_0)
   @JacksonXmlProperty(localName = "rawPeriods", namespace = DxfNamespaces.DXF_2_0)
   public List<String> getRawPeriods() {

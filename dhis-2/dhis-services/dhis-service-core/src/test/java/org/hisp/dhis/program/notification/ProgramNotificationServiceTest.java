@@ -142,6 +142,8 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
 
   private User userLvlTwoLeftLeft;
 
+  private User userLvlTwoLeftLeftDisabled;
+
   private User userLvlTwoLeftRight;
 
   private User userLvlOneLeft;
@@ -285,7 +287,7 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
   }
 
   @Test
-  void testUserGroupRecipient() {
+  void testUserGroupRecipientWithDisabledUser() {
     when(enrollmentStore.get(anyLong())).thenReturn(enrollments.iterator().next());
 
     when(messageService.sendMessage(any()))
@@ -307,7 +309,6 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
 
     MockMessage mockMessage = sentInternalMessages.iterator().next();
 
-    assertTrue(mockMessage.users.contains(userA));
     assertTrue(mockMessage.users.contains(userB));
   }
 
@@ -467,7 +468,7 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
   }
 
   @Test
-  void testDataElementRecipientWithInternalRecipients() {
+  void testDataElementRecipientWithInternalRecipientsWithOneDisabledUser() {
     when(eventStore.get(anyLong())).thenReturn(events.iterator().next());
 
     when(messageService.sendMessage(any()))
@@ -485,20 +486,31 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
     programNotificationTemplate.setRecipientUserGroup(userGroup);
 
     Event event = events.iterator().next();
-
     programNotificationService.sendEventCompletionNotifications(event.getId());
-
     // no message when no template is attached
     assertEquals(0, sentInternalMessages.size());
-
     event.getProgramStage().getNotificationTemplates().add(programNotificationTemplate);
 
     programNotificationService.sendEventCompletionNotifications(event.getId());
-
     assertEquals(1, sentInternalMessages.size());
-
-    assertTrue(sentInternalMessages.iterator().next().users.contains(userA));
+    assertFalse(sentInternalMessages.iterator().next().users.contains(userA));
     assertTrue(sentInternalMessages.iterator().next().users.contains(userB));
+    sentInternalMessages.clear();
+
+    programNotificationTemplate.setNotifyUsersInHierarchyOnly(true);
+    programNotificationService.sendEventCompletionNotifications(event.getId());
+    assertEquals(1, sentInternalMessages.size());
+    assertFalse(sentInternalMessages.iterator().next().users.contains(userA));
+    assertTrue(sentInternalMessages.iterator().next().users.contains(userB));
+    sentInternalMessages.clear();
+
+    programNotificationTemplate.setNotifyUsersInHierarchyOnly(false);
+    programNotificationTemplate.setNotifyParentOrganisationUnitOnly(true);
+    programNotificationService.sendEventCompletionNotifications(event.getId());
+    assertEquals(1, sentInternalMessages.size());
+    assertFalse(sentInternalMessages.iterator().next().users.contains(userA));
+    assertTrue(sentInternalMessages.iterator().next().users.contains(userB));
+    sentInternalMessages.clear();
   }
 
   @Test
@@ -684,14 +696,20 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
     userA = makeUser("U");
     userA.setPhoneNumber(USERA_PHONE_NUMBER);
     userA.getOrganisationUnits().add(lvlTwoLeftLeft);
+    userA.setDisabled(true);
 
     userB = makeUser("V");
     userB.setPhoneNumber(USERB_PHONE_NUMBER);
     userB.getOrganisationUnits().add(lvlTwoLeftLeft);
+    userB.getOrganisationUnits().add(lvlOneLeft);
 
     userGroup = createUserGroup('G', Sets.newHashSet(userA, userB));
 
     // User based on hierarchy
+    userLvlTwoLeftLeftDisabled = makeUser("D");
+    userLvlTwoLeftLeftDisabled.setDisabled(true);
+    userLvlTwoLeftLeftDisabled.getOrganisationUnits().add(lvlTwoLeftLeft);
+    lvlTwoLeftLeft.getUsers().add(userLvlTwoLeftLeftDisabled);
 
     userLvlTwoLeftLeft = makeUser("K");
     userLvlTwoLeftLeft.getOrganisationUnits().add(lvlTwoLeftLeft);
