@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2022, University of Oslo
+ * Copyright (c) 2004-2025, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,33 +25,35 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.hisp.dhis.webapi.controller;
+package org.hisp.dhis.datavalue;
 
-import static org.hisp.dhis.web.WebClient.Header;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.hisp.dhis.fileresource.FileResource;
 
-import org.hisp.dhis.jsontree.JsonObject;
-import org.hisp.dhis.webapi.DhisControllerConvenienceTest;
-import org.junit.jupiter.api.Test;
+public interface DataValueTrimService {
 
-/**
- * Tests the {@link RequestInfoController}.
- *
- * @author Jan Bernitt
- */
-class RequestInfoControllerTest extends DhisControllerConvenienceTest {
-  @Test
-  void testGetCurrentInfo_NoHeader() {
-    JsonObject info = GET("/request").content();
-    assertTrue(info.isObject());
-    assertTrue(info.isEmpty());
-  }
+  /**
+   * Set {@link FileResource#isAssigned()} to {@code false} for any data value related file resource
+   * where no data value exists that actually refers to it (has its UID as value).
+   *
+   * @return the number of file resources that got changed from assigned being true to becoming
+   *     false
+   */
+  int updateFileResourcesNotAssignedToAnyDataValue();
 
-  @Test
-  void testGetCurrentInfo_XRequestIdHeader() {
-    JsonObject info = GET("/request", Header("X-Request-ID", "abc")).content();
-    assertTrue(info.isObject());
-    assertEquals("abc", info.getString("headerXRequestID").string());
-  }
+  /**
+   * Set {@link FileResource#isAssigned()} to {@code true} for any data value related file resource
+   * where at least one data value exists that actually refers to it (has its UID as value).
+   *
+   * @return the number of file resources that got changed from assigned being false to becoming
+   *     true
+   */
+  int updateFileResourcesAssignedToAnyDataValue();
+
+  /**
+   * Set any row to deleted {@code true} that has an empty value and a DE that does not consider
+   * zero being significant.
+   *
+   * @return the number of data values that got changed from deleted being false to becoming true
+   */
+  int updateDeletedIfNotZeroIsSignificant();
 }

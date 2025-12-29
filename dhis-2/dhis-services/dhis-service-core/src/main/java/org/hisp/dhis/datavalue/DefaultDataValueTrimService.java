@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2022, University of Oslo
+ * Copyright (c) 2004-2025, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,44 +25,33 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.hisp.dhis.webapi.mvc.interceptor;
+package org.hisp.dhis.datavalue;
 
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import lombok.AllArgsConstructor;
-import org.hisp.dhis.common.DefaultRequestInfoService;
-import org.hisp.dhis.common.RequestInfo;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-import org.springframework.web.servlet.HandlerInterceptor;
-import org.springframework.web.servlet.ModelAndView;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-/**
- * Maintains the information contained in {@code X-Request-ID} header as an information that is
- * available in the request context.
- *
- * @author Jan Bernitt
- */
-@Component
-@AllArgsConstructor
-public final class RequestInfoInterceptor implements HandlerInterceptor {
-  @Autowired private final DefaultRequestInfoService requestInfoService;
+@Service
+@RequiredArgsConstructor
+public class DefaultDataValueTrimService implements DataValueTrimService {
+
+  private final DataValueTrimStore store;
 
   @Override
-  public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
-      throws Exception {
-    requestInfoService.setCurrentInfo(
-        RequestInfo.builder().headerXRequestID(request.getHeader("X-Request-ID")).build());
-    return true;
+  @Transactional
+  public int updateFileResourcesNotAssignedToAnyDataValue() {
+    return store.updateFileResourcesNotAssignedToAnyDataValue();
   }
 
   @Override
-  public void postHandle(
-      HttpServletRequest request,
-      HttpServletResponse response,
-      Object handler,
-      ModelAndView modelAndView)
-      throws Exception {
-    requestInfoService.setCurrentInfo(null);
+  @Transactional
+  public int updateFileResourcesAssignedToAnyDataValue() {
+    return store.updateFileResourcesAssignedToAnyDataValue();
+  }
+
+  @Override
+  @Transactional
+  public int updateDeletedIfNotZeroIsSignificant() {
+    return store.updateDeletedIfNotZeroIsSignificant();
   }
 }
