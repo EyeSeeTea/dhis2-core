@@ -27,6 +27,7 @@
  */
 package org.hisp.dhis.webapi.security.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -55,6 +56,7 @@ import org.hisp.dhis.webapi.controller.security.AuthenticationController;
 import org.hisp.dhis.webapi.filter.CorsFilter;
 import org.hisp.dhis.webapi.filter.CspFilter;
 import org.hisp.dhis.webapi.filter.CustomAuthenticationFilter;
+import org.hisp.dhis.webapi.filter.TwoFactorSetupRestrictionFilter;
 import org.hisp.dhis.webapi.oprovider.DhisOauthAuthenticationProvider;
 import org.hisp.dhis.webapi.security.ExternalAccessVoter;
 import org.hisp.dhis.webapi.security.FormLoginBasicAuthenticationEntryPoint;
@@ -367,6 +369,8 @@ public class DhisWebApiWebSecurityConfig {
 
     @Autowired private AuthenticationController authenticationController;
 
+    @Autowired private ObjectMapper objectMapper;
+
     @Override
     public void configure(AuthenticationManagerBuilder auth) {
       auth.authenticationProvider(customLdapAuthenticationProvider);
@@ -494,6 +498,7 @@ public class DhisWebApiWebSecurityConfig {
       configureMobileAuthFilter(http);
       configureApiTokenAuthorizationFilter(http);
       configureOAuthTokenFilters(http);
+      configureTwoFactorSetupRestrictionFilter(http);
 
       setHttpHeaders(http);
     }
@@ -598,6 +603,12 @@ public class DhisWebApiWebSecurityConfig {
         http.addFilterAfter(
             getJwtBearerTokenAuthenticationFilter(), BasicAuthenticationFilter.class);
       }
+    }
+
+    private void configureTwoFactorSetupRestrictionFilter(HttpSecurity http) {
+      http.addFilterAfter(
+          new TwoFactorSetupRestrictionFilter(apiContextPath, objectMapper),
+          BasicAuthenticationFilter.class);
     }
 
     /**

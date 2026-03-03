@@ -28,13 +28,19 @@
 package org.hisp.dhis.webapi.controller.security;
 
 import static org.hisp.dhis.common.CodeGenerator.generateSecureRandomBytes;
+import static org.hisp.dhis.security.twofa.TwoFactorAuthService.TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Calendar;
+import java.util.Map;
+import java.util.Set;
+import javax.servlet.http.Cookie;
 import org.hisp.dhis.security.twofa.TwoFactorAuthService;
 import org.hisp.dhis.security.twofa.TwoFactorAuthService.Email2FACode;
 import org.hisp.dhis.security.twofa.TwoFactorType;
@@ -42,6 +48,7 @@ import org.hisp.dhis.setting.SettingKey;
 import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserDetails;
+import org.hisp.dhis.user.UserRole;
 import org.hisp.dhis.web.HttpStatus;
 import org.hisp.dhis.webapi.DhisAuthenticationApiTest;
 import org.hisp.dhis.webapi.json.domain.JsonLoginResponse;
@@ -52,6 +59,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.session.SessionRegistry;
 
 /**
@@ -62,6 +70,7 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
 
   @Autowired SystemSettingManager systemSettingManager;
   @Autowired private SessionRegistry sessionRegistry;
+  @Autowired private ObjectMapper objectMapper;
 
   @AfterEach
   void tearDown() {
@@ -315,6 +324,85 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
 
     assertNotNull(actual);
     assertEquals("admin", actual.getUsername());
+  }
+
+  @Test
+  void testLoginWith2FARestrictionAllowsOnlySetupEndpoints() throws Exception {
+    User user = createUserWithAuth("requires2fa", "ALL");
+    UserRole role = user.getUserRoles().iterator().next();
+    role.setRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
+    userService.updateUserRole(role);
+
+    MockHttpServletResponse loginResponse =
+        mvc.perform(
+                post("/auth/login")
+                    .contentType("application/json")
+            .content("{\"username\":\"requires2fa\",\"password\":\"district\"}"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+
+    Map<String, Object> loginBody =
+      objectMapper.readValue(loginResponse.getContentAsString(), Map.class);
+    assertEquals("REQUIRES_TWO_FACTOR_ENROLMENT", loginBody.get("loginStatus"));
+
+    Cookie sessionCookie = loginResponse.getCookie("JSESSIONID");
+    assertNotNull(sessionCookie);
+
+    mvc.perform(get("/2fa/enabled").cookie(sessionCookie)).andExpect(status().isOk());
+
+    MockHttpServletResponse blockedResponse =
+        mvc.perform(get("/users").cookie(sessionCookie))
+            .andExpect(status().isForbidden())
+            .andReturn()
+            .getResponse();
+
+    Map<String, Object> blockedBody =
+      objectMapper.readValue(blockedResponse.getContentAsString(), Map.class);
+    assertEquals("REQUIRES_TWO_FACTOR_ENROLMENT", blockedBody.get("loginStatus"));
+
+    mvc.perform(post("/2fa/enrollTOTP2FA").cookie(sessionCookie)).andExpect(status().isOk());
+
+    User userWithSecret = userService.getUserByUsername("requires2fa");
+    String code = new Totp(userWithSecret.getSecret()).now();
+
+    mvc.perform(
+            post("/2fa/enable")
+                .cookie(sessionCookie)
+                .contentType("application/json")
+        .content("{\"code\":\"%s\"}".formatted(code)))
+        .andExpect(status().isOk());
+
+    mvc.perform(get("/users").cookie(sessionCookie)).andExpect(status().isOk());
+  }
+
+  @Test
+  void testLoginWith2FARestrictionRedirectsAppNavigationToLoginPage() throws Exception {
+    User user = createUserWithAuth("requires2faredirect", "ALL");
+    UserRole role = user.getUserRoles().iterator().next();
+    role.setRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
+    userService.updateUserRole(role);
+
+    MockHttpServletResponse loginResponse =
+        mvc.perform(
+                post("/auth/login")
+                    .contentType("application/json")
+                    .content(
+                        "{\"username\":\"requires2faredirect\",\"password\":\"district\"}"))
+            .andExpect(status().isOk())
+            .andReturn()
+            .getResponse();
+
+    Cookie sessionCookie = loginResponse.getCookie("JSESSIONID");
+    assertNotNull(sessionCookie);
+
+    MockHttpServletResponse redirectResponse =
+        mvc.perform(get("/apps/Homepage-App/").cookie(sessionCookie))
+            .andExpect(status().is3xxRedirection())
+            .andReturn()
+            .getResponse();
+
+    assertEquals("/dhis-web-login", redirectResponse.getRedirectedUrl());
   }
 
   private void loginWith2FACode(String code) {
