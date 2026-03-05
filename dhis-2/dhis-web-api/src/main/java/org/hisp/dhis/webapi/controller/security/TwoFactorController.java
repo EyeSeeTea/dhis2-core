@@ -36,6 +36,7 @@ import com.google.common.base.Strings;
 import java.io.IOException;
 import java.util.Base64;
 import java.util.Map;
+import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -171,13 +172,16 @@ public class TwoFactorController {
       consumes = {"text/*", "application/*"})
   @ResponseStatus(HttpStatus.OK)
   public WebMessage enable(
-      @RequestBody Map<String, String> body, @CurrentUser(required = true) UserDetails currentUser)
+      @RequestBody Map<String, String> body,
+      HttpServletRequest request,
+      @CurrentUser(required = true) UserDetails currentUser)
       throws ForbiddenException, ConflictException {
     String code = body.get("code");
     if (Strings.isNullOrEmpty(code)) {
       throw new ConflictException(ErrorCode.E3050);
     }
     twoFactorAuthService.enable2FA(currentUser.getUsername(), code, currentUser);
+    TwoFactorSetupSessionAccess.clear(request);
     return ok("2FA was enabled successfully");
   }
 

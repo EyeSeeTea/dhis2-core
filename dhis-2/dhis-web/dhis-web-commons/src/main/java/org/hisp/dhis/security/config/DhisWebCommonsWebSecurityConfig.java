@@ -27,8 +27,10 @@
  */
 package org.hisp.dhis.security.config;
 
+import static org.hisp.dhis.webapi.security.config.DhisWebApiWebSecurityConfig.getApiContextPath;
 import static org.hisp.dhis.webapi.security.config.DhisWebApiWebSecurityConfig.setHttpHeaders;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +49,7 @@ import org.hisp.dhis.security.vote.ModuleAccessVoter;
 import org.hisp.dhis.webapi.filter.CorsFilter;
 import org.hisp.dhis.webapi.filter.CspFilter;
 import org.hisp.dhis.webapi.filter.CustomAuthenticationFilter;
+import org.hisp.dhis.webapi.filter.TwoFactorSetupRestrictionFilter;
 import org.hisp.dhis.webapi.handler.DefaultAuthenticationSuccessHandler;
 import org.hisp.dhis.webapi.security.ExternalAccessVoter;
 import org.hisp.dhis.webapi.security.Http401LoginUrlAuthenticationEntryPoint;
@@ -127,6 +130,8 @@ public class DhisWebCommonsWebSecurityConfig {
     @Autowired private DefaultAuthenticationEventPublisher authenticationEventPublisher;
 
     @Autowired private ConfigurationService configurationService;
+
+    @Autowired private ObjectMapper objectMapper;
 
     @Override
     public void configure(WebSecurity web) {
@@ -267,6 +272,9 @@ public class DhisWebCommonsWebSecurityConfig {
           .addFilterBefore(CorsFilter.get(), BasicAuthenticationFilter.class)
           .addFilterBefore(
               CustomAuthenticationFilter.get(), UsernamePasswordAuthenticationFilter.class)
+          .addFilterAfter(
+              new TwoFactorSetupRestrictionFilter(getApiContextPath(), objectMapper),
+              BasicAuthenticationFilter.class)
           .sessionManagement()
           .requireExplicitAuthenticationStrategy(true)
           .sessionFixation()
