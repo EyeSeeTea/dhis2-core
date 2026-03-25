@@ -32,7 +32,11 @@ import static org.hisp.dhis.security.twofa.TwoFactorAuthService.TWO_FACTOR_AUTH_
 import java.util.Set;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpSession;
+import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserDetails;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 public final class TwoFactorSetupSessionAccess {
   public static final String SESSION_KEY = "2FA_SETUP_REQUIRED";
@@ -59,5 +63,29 @@ public final class TwoFactorSetupSessionAccess {
   public static boolean isRequired(HttpServletRequest request) {
     HttpSession session = request.getSession(false);
     return session != null && Boolean.TRUE.equals(session.getAttribute(SESSION_KEY));
+  }
+
+  /**
+   * Refreshes the cached {@link UserDetails} in the {@link SecurityContextHolder} from a fresh
+   * {@link User} entity. This is needed after 2FA enrollment changes, since the {@link UserDetails}
+   * principal is immutable and would otherwise hold stale {@code isTwoFactorEnabled} state for the
+   * remainder of the session.
+   */
+  public static void refreshSecurityContext(User freshUser, HttpServletRequest request) {
+    Authentication currentAuth = SecurityContextHolder.getContext().getAuthentication();
+    if (currentAuth == null) {
+      return;
+    }
+    UserDetails freshDetails =
+        UserDetails.createUserDetails(freshUser, true, true, null, null, null, null);
+    UsernamePasswordAuthenticationToken newAuth =
+        new UsernamePasswordAuthenticationToken(
+            freshDetails, currentAuth.getCredentials(), freshDetails.getAuthorities());
+    newAuth.setDetails(currentAuth.getDetails());
+    SecurityContextHolder.getContext().setAuthentication(newAuth);
+    HttpSession session = request.getSession(false);
+    if (session != null) {
+      session.setAttribute("SPRING_SECURITY_CONTEXT", SecurityContextHolder.getContext());
+    }
   }
 }
