@@ -29,6 +29,7 @@
  */
 package org.hisp.dhis.sms.config;
 
+import com.fasterxml.jackson.core.io.JsonStringEncoder;
 import java.net.URI;
 import java.util.Base64;
 import java.util.Collections;
@@ -155,7 +156,11 @@ public class SimplisticHttpGetGateWay extends SmsGateway {
       }
     }
 
-    valueStore.put(KEY_TEXT, SmsUtils.encode(text));
+    valueStore.put(
+        KEY_TEXT,
+        config.isSendUrlParameters()
+            ? SmsUtils.encode(text)
+            : new String(JsonStringEncoder.getInstance().quoteAsString(text)));
     valueStore.put(KEY_RECIPIENT, StringUtils.join(recipients, ","));
 
     return valueStore;
