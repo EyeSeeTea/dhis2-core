@@ -202,7 +202,8 @@ class MetadataImportExportControllerTest extends H2ControllerIntegrationTestBase
 
   @Test
   void testGetWithIdentifiableFilterAndFieldsId() {
-    JsonMixed response = GET("/metadata?filter=identifiable:eq:default&fields=id").content(HttpStatus.OK);
+    JsonMixed response =
+        GET("/metadata?filter=identifiable:eq:default&fields=id").content(HttpStatus.OK);
     assertNotNull(response);
   }
 
