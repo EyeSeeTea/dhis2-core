@@ -201,6 +201,20 @@ class MetadataImportExportControllerTest extends H2ControllerIntegrationTestBase
   }
 
   @Test
+  void testGetWithIdentifiableFilterAndFieldsId() {
+    JsonMixed response = GET("/metadata?filter=identifiable:eq:default&fields=id").content(HttpStatus.OK);
+    assertNotNull(response);
+  }
+
+  @Test
+  void testGetWithIdentifiableInFilterForSpecificMetadataClass() {
+    JsonMixed response =
+        GET("/metadata?attributes:fields=id,code,name&attributes:filter=identifiable:in:[IRID]")
+            .content(HttpStatus.OK);
+    assertNotNull(response);
+  }
+
+  @Test
   void testPostValidGeoJsonAttribute() throws IOException {
     POST(
             "/metadata",

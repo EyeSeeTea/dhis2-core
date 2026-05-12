@@ -193,4 +193,9 @@ class ProgramRuleActionControllerTest extends H2ControllerIntegrationTestBase {
     actions.forEach(
         action -> assertEquals(program.getUid(), action.getProgramRule().getProgram().getUid()));
   }
+
+  @Test
+  void testGetProgramRuleActionsWithIdentifiableFilter() {
+    assertNotNull(GET("/programRuleActions?filter=identifiable:eq:default").content(HttpStatus.OK));
+  }
 }

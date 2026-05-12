@@ -44,9 +44,11 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Stream;
 import javax.annotation.Nonnull;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.jpa.QueryHints;
@@ -55,6 +57,7 @@ import org.hisp.dhis.common.IdentifiableObject;
 import org.hisp.dhis.common.IdentifiableObjectStore;
 import org.hisp.dhis.hibernate.InternalHibernateGenericStore;
 import org.hisp.dhis.query.operators.Operator;
+import org.hisp.dhis.query.planner.PropertyPath;
 import org.hisp.dhis.schema.Schema;
 import org.hisp.dhis.schema.SchemaService;
 import org.hisp.dhis.user.UserDetails;
@@ -250,19 +253,26 @@ public class JpaCriteriaQueryEngine implements QueryEngine {
       CriteriaBuilder builder, Root<Y> root, Filter filter, Query<?> query) {
     Predicate or = builder.disjunction();
     Operator<?> op = filter.getOperator();
-    Function<String, Predicate> getPredicate =
-        path ->
-            op.getPredicate(
-                builder, root, schemaService.getPropertyPath(query.getObjectType(), path));
-    Consumer<Predicate> add =
-        p -> {
-          if (p != null) or.getExpressions().add(p);
-        };
-    add.accept(getPredicate.apply("id"));
-    add.accept(getPredicate.apply("code"));
-    add.accept(getPredicate.apply("name"));
-    if (query.isShortNamePersisted()) add.accept(getPredicate.apply("shortName"));
+
+    Stream.of("id", "code", "name", "shortName")
+        .map(path -> getDbPropertyPath(query.getObjectType(), path))
+        .filter(Objects::nonNull)
+        .map(path -> op.getPredicate(builder, root, path))
+        .filter(Objects::nonNull)
+        .forEach(or.getExpressions()::add);
+
     return or;
+  }
+
+  private PropertyPath getDbPropertyPath(Class<?> objectType, String path) {
+    try {
+      PropertyPath propertyPath = schemaService.getPropertyPath(objectType, path);
+      return propertyPath != null && propertyPath.isPersisted() && !propertyPath.haveAlias()
+          ? propertyPath
+          : null;
+    } catch (RuntimeException ignored) {
+      return null;
+    }
   }
 
   private <Y> Predicate buildQueryFilter(CriteriaBuilder builder, Root<Y> root, Filter filter) {

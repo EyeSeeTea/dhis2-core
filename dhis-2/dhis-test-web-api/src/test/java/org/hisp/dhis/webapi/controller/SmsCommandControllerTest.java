@@ -64,4 +64,10 @@ class SmsCommandControllerTest extends H2ControllerIntegrationTestBase {
     JsonMixed content = GET("/smsCommands").content(HttpStatus.OK);
     assertNotNull(content);
   }
+
+  @Test
+  void testGetSmsCommandsWithIdentifiableFilter() {
+    JsonMixed content = GET("/smsCommands?filter=identifiable:eq:default").content(HttpStatus.OK);
+    assertNotNull(content);
+  }
 }

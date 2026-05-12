@@ -155,7 +155,7 @@ public class DefaultQueryParser implements QueryParser {
   @SuppressWarnings("rawtypes")
   private Collection parseValues(Property property, Class<?> valueType, Object arg) {
     Collection<?> values =
-        property.isCollection()
+        property != null && property.isCollection()
             ? parseValue(Collection.class, property.getItemKlass(), arg)
             : parseValue(Collection.class, valueType, arg);
 
