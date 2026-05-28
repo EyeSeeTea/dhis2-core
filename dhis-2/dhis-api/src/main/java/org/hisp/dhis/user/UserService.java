@@ -33,7 +33,6 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -44,6 +43,7 @@ import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import org.hisp.dhis.common.IdentifiableObject;
+import org.hisp.dhis.common.Locale;
 import org.hisp.dhis.common.UID;
 import org.hisp.dhis.dataset.DataSet;
 import org.hisp.dhis.feedback.ConflictException;
@@ -205,6 +205,14 @@ public interface UserService {
    * @return true if the given user represents the last user with ALL authority.
    */
   boolean isLastSuperUser(User user);
+
+  /**
+   * Handles the user query parameters by setting defaults and processing specific fields such as
+   * organisation units and user roles.
+   *
+   * @param params the {@link UserQueryParams}.
+   */
+  void handleUserQueryParams(UserQueryParams params);
 
   /**
    * Returns a list of users based on the given query parameters. The default order of last name and
@@ -499,6 +507,26 @@ public interface UserService {
 
   @CheckForNull
   UserDetails createUserDetailsSafe(@Nonnull String userUid);
+
+  /**
+   * Creates {@link UserDetails} for the user with the given username. The user lookup and details
+   * creation happen within a single transaction, ensuring lazy collections are accessible.
+   *
+   * @param username the username to look up
+   * @return the {@link UserDetails} or {@code null} if no user with the given username exists
+   */
+  @CheckForNull
+  UserDetails createUserDetailsByUsername(@Nonnull String username);
+
+  /**
+   * Creates {@link UserDetails} for the user with the given OpenID. The user lookup and details
+   * creation happen within a single transaction, ensuring lazy collections are accessible.
+   *
+   * @param openId the OpenID to look up
+   * @return the {@link UserDetails} or {@code null} if no user with the given OpenID exists
+   */
+  @CheckForNull
+  UserDetails createUserDetailsByOpenId(@Nonnull String openId);
 
   /**
    * It creates a CurrentUserDetailsImpl object from a User object. It also fetches the users locked

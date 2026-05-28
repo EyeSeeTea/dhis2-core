@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2022, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,12 +27,27 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.hisp.dhis.util;
+package org.hisp.dhis.i18n.ui.resourcebundle;
 
-public class Constants {
-  public static final int RESERVED_VALUE_GENERATION_ATTEMPT = 10;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-  public static final long RESERVED_VALUE_GENERATION_TIMEOUT = (1000 * 30);
+import java.util.ResourceBundle;
+import org.hisp.dhis.common.Locale;
+import org.junit.jupiter.api.Test;
 
-  public static final int RANDOM_GENERATION_CHUNK = 10;
+class DefaultResourceBundleManagerTest {
+
+  private final DefaultResourceBundleManager manager = new DefaultResourceBundleManager();
+
+  @Test
+  void testGlobalBundleWithCyrillicScriptLocale() throws ResourceBundleManagerException {
+    ResourceBundle bundle = manager.getGlobalResourceBundle(Locale.of("uz_UZ_Cyrl"));
+    assertEquals("\u042f\u043d\u0432\u0430\u0440\u044c", bundle.getString("month.january"));
+  }
+
+  @Test
+  void testGlobalBundleWithLatinScriptLocale() throws ResourceBundleManagerException {
+    ResourceBundle bundle = manager.getGlobalResourceBundle(Locale.of("uz_UZ_Latn"));
+    assertEquals("Yanvar", bundle.getString("month.january"));
+  }
 }

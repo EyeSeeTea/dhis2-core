@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2022, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,31 +27,36 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.hisp.dhis.system.util;
+package org.hisp.dhis.security.oauth2;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.List;
-import java.util.Locale;
-import org.junit.jupiter.api.Test;
+import javax.annotation.Nonnull;
+import org.springframework.security.oauth2.core.AuthorizationGrantType;
 
 /**
- * @author Lars Helge Overland
+ * Shared helpers for Spring Authorization Server {@link AuthorizationGrantType} values.
+ *
+ * @author Morten Svanæs <msvanaes@dhis2.org>
  */
-class LocaleUtilsTest {
+public final class OAuth2GrantTypes {
 
-  @Test
-  void testGetLocaleFallbacks() {
-    Locale l1 = new Locale("en", "UK", "en");
-    Locale l2 = new Locale("en", "UK");
-    Locale l3 = new Locale("en");
-    List<String> locales = LocaleUtils.getLocaleFallbacks(l1);
-    assertEquals(3, locales.size());
-    assertTrue(locales.contains("en_UK_en"));
-    assertTrue(locales.contains("en_UK"));
-    assertTrue(locales.contains("en_UK"));
-    assertEquals(2, LocaleUtils.getLocaleFallbacks(l2).size());
-    assertEquals(1, LocaleUtils.getLocaleFallbacks(l3).size());
+  private OAuth2GrantTypes() {}
+
+  /**
+   * Map a grant-type string back to Spring's canonical {@link AuthorizationGrantType} singleton
+   * (authorization_code, client_credentials, refresh_token, device_code). Falls back to a new
+   * instance for any custom value — the equality contract on {@code AuthorizationGrantType} is
+   * value-based, but returning the singleton where possible keeps identity comparisons working.
+   *
+   * <p>Case labels are the RFC-defined grant-type strings (RFC 6749 + RFC 8628); they match
+   * Spring's {@code AuthorizationGrantType.*.getValue()} by construction.
+   */
+  public static AuthorizationGrantType resolve(@Nonnull String value) {
+    return switch (value) {
+      case "authorization_code" -> AuthorizationGrantType.AUTHORIZATION_CODE;
+      case "client_credentials" -> AuthorizationGrantType.CLIENT_CREDENTIALS;
+      case "refresh_token" -> AuthorizationGrantType.REFRESH_TOKEN;
+      case "urn:ietf:params:oauth:grant-type:device_code" -> AuthorizationGrantType.DEVICE_CODE;
+      default -> new AuthorizationGrantType(value);
+    };
   }
 }

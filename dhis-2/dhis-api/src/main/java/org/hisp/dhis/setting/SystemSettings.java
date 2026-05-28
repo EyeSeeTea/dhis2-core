@@ -34,7 +34,6 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.util.Date;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BinaryOperator;
@@ -43,6 +42,7 @@ import org.hisp.dhis.analytics.AnalyticsCacheTtlMode;
 import org.hisp.dhis.analytics.AnalyticsFinancialYearStartKey;
 import org.hisp.dhis.common.DigitGroupSeparator;
 import org.hisp.dhis.common.DisplayProperty;
+import org.hisp.dhis.common.Locale;
 import org.hisp.dhis.common.OpenApi;
 import org.hisp.dhis.common.cache.CacheStrategy;
 import org.hisp.dhis.common.cache.Cacheability;
@@ -832,5 +832,31 @@ public non-sealed interface SystemSettings extends Settings {
   default boolean isHideUnapprovedDataInAnalytics() {
     // -1 means approval is disabled
     return getIgnoreAnalyticsApprovalYearThreshold() >= 0;
+  }
+
+  /**
+   * @since 2.42
+   * @return a set of redirect urls that are allowed in device client enrollment and registration,
+   *     delimited by comma. Defaults to the DHIS2 Android app's custom-scheme redirect URI.
+   */
+  default String getDeviceEnrollmentRedirectAllowlist() {
+    return asString("deviceEnrollmentRedirectAllowlist", "dhis2oauth://oauth");
+  }
+
+  /**
+   * @since 2.42
+   * @return a set of user groups (by name) that are allowed to enroll devices, delimited by comma.
+   *     Default is empty string which means all users can enroll devices.
+   */
+  default String getDeviceEnrollmentAllowedUserGroups() {
+    return asString("deviceEnrollmentAllowedUserGroups", "");
+  }
+
+  /**
+   * @since 2.42
+   * @return the time to live in seconds for the device enrollment IAT (issued at) claim.
+   */
+  default int getDeviceEnrollmentIATTtlSeconds() {
+    return asInt("deviceEnrollmentIATTtlSeconds", 60);
   }
 }

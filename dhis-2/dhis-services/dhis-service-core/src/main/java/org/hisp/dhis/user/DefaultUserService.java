@@ -50,7 +50,6 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -69,6 +68,7 @@ import org.hisp.dhis.cache.CacheProvider;
 import org.hisp.dhis.common.AuditLogUtil;
 import org.hisp.dhis.common.CodeGenerator;
 import org.hisp.dhis.common.IdentifiableObject;
+import org.hisp.dhis.common.Locale;
 import org.hisp.dhis.common.PasswordGenerator;
 import org.hisp.dhis.common.UID;
 import org.hisp.dhis.common.UserOrgUnitType;
@@ -354,7 +354,9 @@ public class DefaultUserService implements UserService {
     return userStore.getUserCount();
   }
 
-  private void handleUserQueryParams(UserQueryParams params) {
+  @Override
+  @Transactional(readOnly = true)
+  public void handleUserQueryParams(UserQueryParams params) {
     boolean canSeeOwnRoles =
         params.isCanSeeOwnRoles()
             || settingsProvider.getCurrentSettings().getCanGrantOwnUserRoles();
@@ -902,6 +904,28 @@ public class DefaultUserService implements UserService {
   @CheckForNull
   public UserDetails createUserDetailsSafe(@Nonnull String userUid) {
     User user = userStore.getByUid(userUid);
+    if (user == null) {
+      return null;
+    }
+    return createUserDetails(user);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  @CheckForNull
+  public UserDetails createUserDetailsByUsername(@Nonnull String username) {
+    User user = userStore.getUserByUsername(username);
+    if (user == null) {
+      return null;
+    }
+    return createUserDetails(user);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  @CheckForNull
+  public UserDetails createUserDetailsByOpenId(@Nonnull String openId) {
+    User user = userStore.getUserByOpenId(openId);
     if (user == null) {
       return null;
     }

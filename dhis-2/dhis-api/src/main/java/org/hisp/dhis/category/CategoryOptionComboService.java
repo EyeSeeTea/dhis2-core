@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2022, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -27,29 +27,16 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.hisp.dhis.webapi.security.config;
+package org.hisp.dhis.category;
 
-import org.hisp.dhis.condition.PropertiesAwareConfigurationCondition;
-import org.hisp.dhis.external.conf.ConfigurationKey;
-import org.springframework.context.annotation.ConditionContext;
-import org.springframework.core.type.AnnotatedTypeMetadata;
+import org.hisp.dhis.feedback.ConflictException;
 
-/**
- * Condition that matches to true if redis.enabled property is set to true in dhis.conf.
- *
- * @author Ameen Mohamed
- */
-public class AuthorizationServerEnabledCondition extends PropertiesAwareConfigurationCondition {
-  @Override
-  public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-    if (!isTestRun(context)) {
-      return getConfiguration().isEnabled(ConfigurationKey.OAUTH2_SERVER_ENABLED);
-    }
-    return false;
-  }
+public interface CategoryOptionComboService {
 
-  @Override
-  public ConfigurationPhase getConfigurationPhase() {
-    return ConfigurationPhase.REGISTER_BEAN;
-  }
+  /**
+   * Updates the CategoryOptionCombo with the given values from the provided DTO. The DTO uses a
+   * Boolean type for 'ignoreApproval' to prevent changing from true to false when not provided.
+   */
+  void updateCoc(CategoryOptionCombo persisted, CategoryOptionComboUpdateDto cocUpdate)
+      throws ConflictException;
 }
