@@ -45,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.annotation.Nonnull;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -86,6 +87,8 @@ import org.hisp.dhis.user.PasswordValidationService;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserCredentialsDto;
 import org.hisp.dhis.user.UserDetails;
+import org.hisp.dhis.user.UserGroup;
+import org.hisp.dhis.user.UserRole;
 import org.hisp.dhis.user.UserService;
 import org.hisp.dhis.user.UserSettingKey;
 import org.hisp.dhis.user.UserSettingService;
@@ -99,6 +102,7 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.switchuser.SwitchUserGrantedAuthority;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -183,7 +187,26 @@ public class MeController {
 
     List<ApiToken> patTokens = apiTokenService.getAllOwning(user);
 
-    MeDto meDto = new MeDto(user, userSettings, programs, dataSets, patTokens);
+    // Filter userGroups and userRoles based on ACL read access
+    Set<UserGroup> filteredUserGroups =
+        user.getGroups().stream()
+            .filter(group -> aclService.canRead(user, group))
+            .collect(Collectors.toSet());
+
+    Set<UserRole> filteredUserRoles =
+        user.getUserRoles().stream()
+            .filter(role -> aclService.canRead(user, role))
+            .collect(Collectors.toSet());
+
+    MeDto meDto =
+        new MeDto(
+            user,
+            userSettings,
+            programs,
+            dataSets,
+            patTokens,
+            filteredUserGroups,
+            filteredUserRoles);
     determineUserImpersonation(meDto);
 
     // TODO: To remove when we remove old UserCredentials compatibility
@@ -267,20 +290,6 @@ public class MeController {
       throw new ConflictException("Invalid format for WhatsApp value '" + user.getWhatsApp() + "'");
     }
 
-    FileResource avatar = currentUser.getAvatar();
-    if (avatar != null) {
-      FileResource fileResource = fileResourceService.getFileResource(avatar.getUid());
-      if (fileResource == null) {
-        throw new ConflictException("File does not exist");
-      }
-
-      if (!fileResource.getCreatedBy().getUid().equals(currentUser.getUid())) {
-        throw new ConflictException("Not the owner of the file");
-      }
-
-      currentUser.setAvatar(fileResource);
-    }
-
     manager.update(currentUser);
 
     if (fields.isEmpty()) {
@@ -298,6 +307,30 @@ public class MeController {
         NodeUtils.createRootNode(collectionNode.getChildren().get(0)),
         APPLICATION_JSON_VALUE,
         response.getOutputStream());
+  }
+
+  /**
+   * Removes the avatar (profile picture) for the current user. This endpoint allows users to remove
+   * their profile picture without requiring special authorities to access the /users endpoint.
+   *
+   * @param currentUser the currently authenticated user
+   */
+  @DeleteMapping(value = "/avatar")
+  @ResponseStatus(HttpStatus.NO_CONTENT)
+  public void removeAvatar(@CurrentUser(required = true) User currentUser) {
+    FileResource avatar = currentUser.getAvatar();
+
+    if (avatar != null) {
+      // Mark the file resource as unassigned so it can be cleaned up
+      FileResource fileResource = fileResourceService.getFileResource(avatar.getUid());
+      if (fileResource != null) {
+        fileResource.setAssigned(false);
+        fileResourceService.updateFileResource(fileResource);
+      }
+
+      currentUser.setAvatar(null);
+      manager.update(currentUser);
+    }
   }
 
   @GetMapping(
@@ -465,7 +498,7 @@ public class MeController {
     return rootNode;
   }
 
-  private void merge(User currentUser, User user) {
+  private void merge(User currentUser, User user) throws ConflictException {
     currentUser.setFirstName(stringWithDefault(user.getFirstName(), currentUser.getFirstName()));
     currentUser.setSurname(stringWithDefault(user.getSurname(), currentUser.getSurname()));
     currentUser.setEmail(stringWithDefault(user.getEmail(), currentUser.getEmail()));
@@ -476,7 +509,18 @@ public class MeController {
         stringWithDefault(user.getIntroduction(), currentUser.getIntroduction()));
     currentUser.setGender(stringWithDefault(user.getGender(), currentUser.getGender()));
 
-    currentUser.setAvatar(user.getAvatar() != null ? user.getAvatar() : currentUser.getAvatar());
+    FileResource newAvatar = null;
+    if (user.getAvatar() != null) {
+      newAvatar = fileResourceService.getFileResource(user.getAvatar().getUid());
+      if (newAvatar == null) {
+        throw new ConflictException("File does not exist");
+      }
+
+      if (!newAvatar.getCreatedBy().getUid().equals(currentUser.getUid())) {
+        throw new ConflictException("Not the owner of the file");
+      }
+    }
+    currentUser.setAvatar(newAvatar != null ? newAvatar : currentUser.getAvatar());
 
     currentUser.setSkype(stringWithDefault(user.getSkype(), currentUser.getSkype()));
     currentUser.setFacebookMessenger(

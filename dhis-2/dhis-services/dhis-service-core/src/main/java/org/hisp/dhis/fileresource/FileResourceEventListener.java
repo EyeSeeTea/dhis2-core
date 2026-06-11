@@ -94,7 +94,6 @@ public class FileResourceEventListener {
 
     FileResource fileResource =
         fileResourceService.getFileResource(imageFileSavedEvent.fileResource());
-
     if (fileResource == null) {
       log.warn(
           "Could not find file resource for {}, skip saving image files",

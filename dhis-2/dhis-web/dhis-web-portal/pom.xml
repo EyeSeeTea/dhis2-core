@@ -7,7 +7,7 @@
   <parent>
     <groupId>org.hisp.dhis</groupId>
     <artifactId>dhis-web</artifactId>
-    <version>2.41.6.1-eyeseetea-fork-2</version>
+    <version>2.41.8.2</version>
   </parent>
 
   <artifactId>dhis-web-portal</artifactId>
@@ -16,7 +16,7 @@
   <properties>
     <rootDir>../../</rootDir>
     <jib.version>3.4.4</jib.version>
-    <jib.from.image>tomcat:9.0.109-jre17</jib.from.image>
+    <jib.from.image>tomcat:9.0.111-jre17</jib.from.image>
     <jib.to.image>dhis2/core-dev:local</jib.to.image>
     <!-- uid=65534(nobody) gid=65534(nogroup) present in Tomcat image -->
     <jib.container.user>65534</jib.container.user>

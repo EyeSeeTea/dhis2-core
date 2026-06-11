@@ -35,8 +35,8 @@ pipeline {
                     gitHelper.setCommitStatus("${env.DHIS2_COMMIT_SHA}", "${env.DHIS2_REPO_URL}")
 
                     withMaven(options: [artifactsPublisher(disabled: true)]) {
-                        sh 'mvn -X -T 4 --batch-mode --no-transfer-progress clean install -f dhis-2/pom.xml --update-snapshots -pl -dhis-web-embedded-jetty,-dhis-test-coverage'
-                        sh 'mvn -X -T 4 --batch-mode --no-transfer-progress install -f dhis-2/dhis-web/pom.xml --update-snapshots'
+                        sh 'mvn -T 4 --batch-mode --no-transfer-progress clean install -f dhis-2/pom.xml --update-snapshots -pl -dhis-web-embedded-jetty,-dhis-test-coverage'
+                        sh 'mvn -T 4 --batch-mode --no-transfer-progress install -f dhis-2/dhis-web/pom.xml --update-snapshots'
                     }
                 }
             }
@@ -105,7 +105,7 @@ pipeline {
         stage('Publish image') {
             environment {
                 // THIS MUST be kept in sync with the jib.from.image in ../dhis-2/dhis-web/dhis-web-portal/pom.xml
-                BASE_IMAGE = "tomcat:9.0.109-jre17"
+                BASE_IMAGE = "tomcat:9.0.111-jre17"
                 IMAGE_REPOSITORY = "$DOCKER_IMAGE_NAME"
             }
 
@@ -143,6 +143,7 @@ pipeline {
                 MIN_READY_SECONDS = "240"
                 CORE_RESOURCES_REQUESTS_MEMORY = "2500Mi"
                 PUBLIC = "true"
+                ALLOW_SUSPEND = "false"
             }
 
             steps {

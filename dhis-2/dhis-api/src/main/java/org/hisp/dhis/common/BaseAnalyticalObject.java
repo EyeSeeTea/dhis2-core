@@ -712,8 +712,8 @@ public abstract class BaseAnalyticalObject extends BaseNameableObject implements
         rawPeriods = new ArrayList<>();
         rawPeriods.addAll(
             getPeriods().stream()
-                .filter(period -> !rawPeriods.contains(period.getDimensionItem()))
-                .map(period -> period.getDimensionItem())
+                .map(Period::getDimensionItem)
+                .filter(dimensionItem -> !rawPeriods.contains(dimensionItem))
                 .collect(Collectors.toCollection(LinkedHashSet::new)));
       }
 

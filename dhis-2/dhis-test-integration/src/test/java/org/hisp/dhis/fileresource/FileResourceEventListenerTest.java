@@ -91,7 +91,6 @@ class FileResourceEventListenerTest extends IntegrationTestBase {
     File file = File.createTempFile("file-resource", "test");
 
     Map<ImageFileDimension, File> map = Map.of(ImageFileDimension.LARGE, file);
-
     ImageFileSavedEvent event =
         new ImageFileSavedEvent(
             fileResource.getUid(), file, CurrentUserUtil.getCurrentUserDetails().getUid());

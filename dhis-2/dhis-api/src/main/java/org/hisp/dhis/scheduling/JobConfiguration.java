@@ -39,7 +39,7 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
-import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import lombok.Getter;
@@ -199,6 +199,9 @@ public class JobConfiguration extends BaseIdentifiableObject implements Secondar
     this(name, type, null);
   }
 
+  /** The largest timestamp values that has already been used */
+  private static final AtomicLong mostRecentUsedTimeMilli = new AtomicLong(0L);
+
   /**
    * Constructor to use for any type of {@link SchedulingType#ONCE_ASAP} execution.
    *
@@ -209,14 +212,15 @@ public class JobConfiguration extends BaseIdentifiableObject implements Secondar
   public JobConfiguration(
       @CheckForNull String name, @Nonnull JobType type, @CheckForNull String executedBy) {
     this.name =
-        (name == null || name.isEmpty())
-            ? "%s (%d-%s)"
-                .formatted(
-                    type.name(), System.nanoTime(), UUID.randomUUID().toString().substring(0, 8))
-            : name;
+        name == null || name.isEmpty() ? "%s (%d)".formatted(type.name(), nowUnique()) : name;
     this.jobType = type;
     this.executedBy = executedBy;
     setAutoFields();
+  }
+
+  static long nowUnique() {
+    long now = System.currentTimeMillis();
+    return mostRecentUsedTimeMilli.updateAndGet(val -> Math.max(val + 1, now));
   }
 
   // -------------------------------------------------------------------------

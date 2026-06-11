@@ -923,7 +923,7 @@ public class User extends BaseIdentifiableObject implements MetadataObject {
 
   @JsonProperty
   @JacksonXmlProperty(namespace = DxfNamespaces.DXF_2_0)
-  @PropertyRange(min = 2)
+  @PropertyRange(min = 1)
   public String getFirstName() {
     return firstName;
   }
@@ -934,7 +934,7 @@ public class User extends BaseIdentifiableObject implements MetadataObject {
 
   @JsonProperty
   @JacksonXmlProperty(namespace = DxfNamespaces.DXF_2_0)
-  @PropertyRange(min = 2)
+  @PropertyRange(min = 1)
   public String getSurname() {
     return surname;
   }
@@ -1202,6 +1202,21 @@ public class User extends BaseIdentifiableObject implements MetadataObject {
   }
 
   public void setAvatar(FileResource avatar) {
+    // if new -> new assigned
+    if (this.avatar == null && avatar != null) {
+      avatar.setAssigned(true);
+    }
+
+    // if update -> old unassigned + new assigned
+    if (this.avatar != null && avatar != null && (!this.avatar.getUid().equals(avatar.getUid()))) {
+      this.avatar.setAssigned(false);
+      avatar.setAssigned(true);
+    }
+
+    // if delete -> unassigned
+    if (this.avatar != null && avatar == null) {
+      this.avatar.setAssigned(false);
+    }
     this.avatar = avatar;
   }
 
