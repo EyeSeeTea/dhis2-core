@@ -235,12 +235,18 @@ public class ValidationUtils {
    * @return true if the username is valid, false otherwise.
    */
   public static boolean usernameIsValid(String username, boolean isInvite) {
-    if ((username == null || username.length() == 0) && !isInvite) {
+    if ((username == null || username.isEmpty()) && !isInvite) {
       return false;
     } else if (isInvite) {
       return true;
     }
+    return usernameIsValid(username);
+  }
 
+  public static boolean usernameIsValid(String username) {
+    if ((username == null || username.isEmpty())) {
+      return false;
+    }
     Matcher matcher = USERNAME_PATTERN.matcher(username);
     return matcher.matches();
   }
@@ -505,6 +511,13 @@ public class ValidationUtils {
 
     // Value type checks
     switch (valueType) {
+      case TEXT:
+      case LONG_TEXT:
+      case MULTI_TEXT:
+      case TRACKER_ASSOCIATE:
+      case REFERENCE:
+      case GEOJSON:
+        return null;
       case LETTER:
         return !isValidLetter(value) ? "value_not_valid_letter" : null;
       case NUMBER:
@@ -521,6 +534,10 @@ public class ValidationUtils {
         return !isNegativeInteger(value) ? "value_not_negative_integer" : null;
       case INTEGER_ZERO_OR_POSITIVE:
         return !isZeroOrPositiveInteger(value) ? "value_not_zero_or_positive_integer" : null;
+      case PHONE_NUMBER:
+        return !isPhoneNumber(value) ? "value_not_phone_number" : null;
+      case EMAIL:
+        return !emailIsValid(value) ? "value_not_valid_email" : null;
       case BOOLEAN:
         return !isBool(value.toLowerCase()) ? "value_not_bool" : null;
       case TRUE_ONLY:
@@ -536,6 +553,14 @@ public class ValidationUtils {
       case FILE_RESOURCE:
       case IMAGE:
         return !isValidUid(value) ? "value_not_valid_file_resource_uid" : null;
+      case TIME:
+        return !timeIsValid(value) ? "value_not_valid_time" : null;
+      case USERNAME:
+        return !usernameIsValid(value) ? "value_not_valid_username" : null;
+      case ORGANISATION_UNIT:
+        return !isValidUid(value) ? "value_not_valid_org_unit_uid" : null;
+      case AGE:
+        return !dateIsValid(value) ? "value_not_valid_age" : null;
       default:
         return null;
     }
@@ -695,6 +720,7 @@ public class ValidationUtils {
    * @return normalized boolean value.
    */
   public static String normalizeBoolean(String bool, ValueType valueType) {
+    if (bool == null) return null;
     if (valueType != null && valueType.isBoolean()) {
       if (BOOL_FALSE_VARIANTS.contains(bool) && valueType != ValueType.TRUE_ONLY) {
         return FALSE;

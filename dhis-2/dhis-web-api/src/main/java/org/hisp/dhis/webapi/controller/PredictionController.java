@@ -40,6 +40,7 @@ import org.hisp.dhis.common.OpenApi;
 import org.hisp.dhis.dxf2.webmessage.WebMessage;
 import org.hisp.dhis.feedback.Status;
 import org.hisp.dhis.message.MessageService;
+import org.hisp.dhis.notification.NotificationLevel;
 import org.hisp.dhis.predictor.PredictionService;
 import org.hisp.dhis.predictor.PredictionSummary;
 import org.hisp.dhis.predictor.PredictionTask;
@@ -95,7 +96,10 @@ public class PredictionController {
 
     JobProgress progress =
         new ControlledJobProgress(
-            messageService, jobId, new NotifierJobProgress(notifier, jobId), true);
+            messageService,
+            jobId,
+            new NotifierJobProgress(notifier, jobId, NotificationLevel.INFO),
+            true);
     if (async) {
       taskExecutor.executeTask(
           new PredictionTask(

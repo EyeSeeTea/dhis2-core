@@ -69,6 +69,7 @@ import org.hisp.dhis.attribute.Attribute;
 import org.hisp.dhis.attribute.Attribute.ObjectType;
 import org.hisp.dhis.attribute.AttributeValue;
 import org.hisp.dhis.common.IdentifiableObject;
+import org.hisp.dhis.common.IllegalQueryException;
 import org.hisp.dhis.gist.GistQuery.Comparison;
 import org.hisp.dhis.gist.GistQuery.Field;
 import org.hisp.dhis.gist.GistQuery.Filter;
@@ -78,6 +79,7 @@ import org.hisp.dhis.period.Period;
 import org.hisp.dhis.period.PeriodType;
 import org.hisp.dhis.query.JpaQueryUtils;
 import org.hisp.dhis.schema.Property;
+import org.hisp.dhis.schema.PropertyType;
 import org.hisp.dhis.schema.RelativePropertyContext;
 import org.hisp.dhis.schema.Schema;
 import org.hisp.dhis.schema.annotation.Gist.Transform;
@@ -591,11 +593,11 @@ final class GistBuilder {
       case NONE:
         return HQL_NULL;
       case SIZE:
-        return createSizeTransformerHQL(index, field, property, "");
+        return createSizeTransformerHQL(index, field, property);
       case IS_EMPTY:
-        return createSizeTransformerHQL(index, field, property, "=0");
+        return createIsEmptyTransformerHQL(field);
       case IS_NOT_EMPTY:
-        return createSizeTransformerHQL(index, field, property, ">0");
+        return createIsNotEmptyTransformerHQL(field);
       case NOT_MEMBER:
         return createHasMemberTransformerHQL(index, field, property, "=0");
       case MEMBER:
@@ -610,20 +612,27 @@ final class GistBuilder {
     }
   }
 
-  private String createSizeTransformerHQL(
-      int index, Field field, Property property, String compare) {
+  private String createSizeTransformerHQL(int index, Field field, Property property) {
     String tableName = "t_" + index;
     RelativePropertyContext fieldContext = context.switchedTo(property.getItemKlass());
     String memberPath = getMemberPath(field.getPropertyPath());
 
     if (!isFilterBySharing(fieldContext)) {
       // generates better SQL in case no access control is needed
-      return String.format("size(e.%s) %s", memberPath, compare);
+      return String.format("size(e.%s) %s", memberPath, "");
     }
     String accessFilter = createAccessFilterHQL(fieldContext, tableName);
     return String.format(
         "(select count(*) %5$s from %2$s %1$s where %1$s in elements(e.%3$s) and %4$s)",
-        tableName, property.getItemKlass().getSimpleName(), memberPath, accessFilter, compare);
+        tableName, property.getItemKlass().getSimpleName(), memberPath, accessFilter, "");
+  }
+
+  private String createIsNotEmptyTransformerHQL(Field field) {
+    return String.format("e.%s is not empty", getMemberPath(field.getPropertyPath()));
+  }
+
+  private String createIsEmptyTransformerHQL(Field field) {
+    return String.format("e.%s is empty", getMemberPath(field.getPropertyPath()));
   }
 
   private String createIdsTransformerHQL(int index, Field field, Property property) {
@@ -646,7 +655,7 @@ final class GistBuilder {
     String propertyName = determineReferenceProperty(field, itemContext, true);
     if (propertyName == null || property.getItemKlass() == Period.class) {
       // give up
-      return createSizeTransformerHQL(index, field, property, "");
+      return createSizeTransformerHQL(index, field, property);
     }
     String tableName = "t_" + index;
     String accessFilter = createAccessFilterHQL(itemContext, tableName);
@@ -877,12 +886,17 @@ final class GistBuilder {
     String fieldTemplate = "%s";
     if (filter.isAttribute()) {
       fieldTemplate = "jsonb_extract_path_text(%s, '" + filter.getPropertyPath() + "', 'value')";
-    } else if (isStringLengthFilter(filter, context.resolveMandatory(filter.getPropertyPath()))) {
-      fieldTemplate = "length(%s)";
-    } else if (isCollectionSizeFilter(filter, context.resolveMandatory(filter.getPropertyPath()))) {
-      fieldTemplate = "size(%s)";
-    } else if (operator.isCaseInsensitive()) {
-      fieldTemplate = "lower(%s)";
+    } else {
+      Property property = context.resolveMandatory(filter.getPropertyPath());
+      if (property.getPropertyType() == PropertyType.PASSWORD)
+        throw new IllegalQueryException("Filter not allowed: " + filter);
+      if (isStringLengthFilter(filter, property)) {
+        fieldTemplate = "length(%s)";
+      } else if (isCollectionSizeFilter(filter, property)) {
+        fieldTemplate = "size(%s)";
+      } else if (operator.isCaseInsensitive()) {
+        fieldTemplate = "lower(%s)";
+      }
     }
     str.append(String.format(fieldTemplate, field));
     str.append(" ").append(createOperatorLeftSideHQL(operator));

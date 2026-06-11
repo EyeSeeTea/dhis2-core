@@ -543,7 +543,7 @@ public class DefaultCategoryService implements CategoryService {
       return;
     }
 
-    List<CategoryOptionCombo> generatedOptionCombos = categoryCombo.generateOptionCombosList();
+    Set<CategoryOptionCombo> generatedOptionCombos = categoryCombo.generateOptionCombosSet();
     Set<CategoryOptionCombo> persistedOptionCombos = categoryCombo.getOptionCombos();
 
     boolean modified = false;
@@ -778,6 +778,6 @@ public class DefaultCategoryService implements CategoryService {
   @Override
   public SetValuedMap<String, String> getCategoryOptionOrganisationUnitsAssociations(
       Set<String> uids) {
-    return jdbcOrgUnitAssociationsStore.getOrganisationUnitsAssociationsForCurrentUser(uids);
+    return jdbcOrgUnitAssociationsStore.getOrganisationUnitsAssociationsForCurrentUser(uids, false);
   }
 }

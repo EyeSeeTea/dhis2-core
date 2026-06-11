@@ -85,7 +85,7 @@ public class DefaultProgramRuleEngineService implements ProgramRuleEngineService
     }
 
     List<ProgramRule> programRules =
-        programRuleEngine.getProgramRules(programInstance.getProgram());
+        programRuleEngine.getProgramRulesForEnrollment(programInstance.getProgram());
 
     if (programRules.isEmpty()) {
       return List.of();
@@ -143,8 +143,7 @@ public class DefaultProgramRuleEngineService implements ProgramRuleEngineService
     }
 
     Program program = psi.getProgramStage().getProgram();
-    List<ProgramRule> programRules =
-        programRuleEngine.getProgramRules(program, List.of(psi.getProgramStage()));
+    List<ProgramRule> programRules = programRuleEngine.getProgramRules(program);
 
     if (programRules.isEmpty()) {
       return List.of();

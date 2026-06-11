@@ -30,21 +30,26 @@ package org.hisp.dhis.tracker.bundle.persister;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.Builder;
 import lombok.Data;
 import org.apache.commons.lang3.StringUtils;
 import org.hibernate.Session;
 import org.hisp.dhis.common.AuditType;
+import org.hisp.dhis.common.UID;
 import org.hisp.dhis.dataelement.DataElement;
+import org.hisp.dhis.event.EventStatus;
 import org.hisp.dhis.eventdatavalue.EventDataValue;
 import org.hisp.dhis.program.ProgramStageInstance;
 import org.hisp.dhis.reservedvalue.ReservedValueService;
@@ -59,6 +64,7 @@ import org.hisp.dhis.tracker.converter.TrackerConverterService;
 import org.hisp.dhis.tracker.converter.TrackerSideEffectConverterService;
 import org.hisp.dhis.tracker.domain.DataValue;
 import org.hisp.dhis.tracker.domain.Event;
+import org.hisp.dhis.tracker.job.SideEffectTrigger;
 import org.hisp.dhis.tracker.job.TrackerSideEffectDataBundle;
 import org.hisp.dhis.tracker.preheat.TrackerPreheat;
 import org.hisp.dhis.util.DateUtils;
@@ -115,7 +121,9 @@ public class EventPersister extends AbstractTrackerPersister<Event, ProgramStage
 
   @Override
   protected TrackerSideEffectDataBundle handleSideEffects(
-      TrackerBundle bundle, ProgramStageInstance programStageInstance) {
+      TrackerBundle bundle,
+      ProgramStageInstance programStageInstance,
+      List<SideEffectTrigger> triggers) {
     return TrackerSideEffectDataBundle.builder()
         .klass(ProgramStageInstance.class)
         .enrollmentRuleEffects(new HashMap<>())
@@ -126,7 +134,32 @@ public class EventPersister extends AbstractTrackerPersister<Event, ProgramStage
         .accessedBy(bundle.getUsername())
         .programStageInstance(programStageInstance)
         .program(programStageInstance.getProgramStage().getProgram())
+        .programStageInstance(programStageInstance)
+        .program(programStageInstance.getProgramStage().getProgram())
+        .triggers(triggers)
         .build();
+  }
+
+  @Override
+  protected List<SideEffectTrigger> determineSideEffectTriggers(
+      TrackerPreheat preheat, Event entity) {
+    ProgramStageInstance persistedEvent = preheat.getEvent(entity.getUid());
+    List<SideEffectTrigger> triggers = new ArrayList<>();
+    // If the event is new and has been completed
+    if (persistedEvent == null && entity.getStatus() == EventStatus.COMPLETED) {
+      triggers.add(SideEffectTrigger.EVENT_COMPLETION);
+      return triggers;
+    }
+
+    // If the event is existing and its status has changed to completed
+    if (persistedEvent != null
+        && persistedEvent.getStatus() != entity.getStatus()
+        && entity.getStatus() == EventStatus.COMPLETED) {
+      triggers.add(SideEffectTrigger.EVENT_COMPLETION);
+      return triggers;
+    }
+
+    return triggers;
   }
 
   @Override
@@ -242,11 +275,11 @@ public class EventPersister extends AbstractTrackerPersister<Event, ProgramStage
   }
 
   @Override
-  protected String getUpdatedTrackedEntity(ProgramStageInstance entity) {
-    return Optional.ofNullable(entity.getProgramInstance())
-        .filter(pi -> pi.getEntityInstance() != null)
-        .map(pi -> pi.getEntityInstance().getUid())
-        .orElse(null);
+  protected Set<UID> getUpdatedTrackedEntities(ProgramStageInstance entity) {
+    return Stream.of(entity.getProgramInstance())
+        .filter(e -> e.getEntityInstance() != null)
+        .map(e -> UID.of(e.getEntityInstance()))
+        .collect(Collectors.toSet());
   }
 
   private boolean isNewDataValue(EventDataValue eventDataValue, DataValue dv) {
@@ -269,7 +302,7 @@ public class EventPersister extends AbstractTrackerPersister<Event, ProgramStage
 
     if (isNewDataValue(eventDataValue, dv)) {
       eventDataValue = new EventDataValue();
-      eventDataValue.setCreated(getFromOrNewDate(dv, DataValue::getCreatedAt));
+      eventDataValue.setCreated(new Date());
       eventDataValue.setLastUpdated(getFromOrNewDate(dv, DataValue::getUpdatedAt));
       persistedValue = dv.getValue();
       auditType = AuditType.CREATE;

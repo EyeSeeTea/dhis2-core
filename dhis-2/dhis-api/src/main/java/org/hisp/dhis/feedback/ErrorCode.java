@@ -66,8 +66,10 @@ public enum ErrorCode {
   E1119("{0} already exists: `{1}`"),
   E1120("Update cannot be applied as it would make existing data values inaccessible"),
 
+  E1134(
+      "Only properties [attributeValues, code, ignoreApproval] are updatable for Category option combo"),
   /* Org unit merge */
-  E1500("At least two source orgs unit must be specified"),
+  E1500("At least one source org unit must be specified"),
   E1501("Target org unit must be specified"),
   E1502("Target org unit cannot be a source org unit"),
   E1503("Source org unit does not exist: `{0}`"),
@@ -189,6 +191,7 @@ public enum ErrorCode {
   E3032("User `{0}` does not have access to user role"),
   E3040("Could not resolve JwsAlgorithm from the JWK. Can not write a valid JWKSet"),
   E3041("User `{0}` is not allowed to change a user having the ALL authority"),
+  E3042("Too many failed disable attempts. Please try again later"),
 
   /* Metadata Validation */
   E4000("Missing required property `{0}`"),
@@ -415,6 +418,15 @@ public enum ErrorCode {
   E7144(
       "Query failed because a referenced table does not exist. Please ensure analytics job was run"),
   E7145("Query failed because of a syntax error"),
+  E7147("Query failed because of a missing column: `{0}`"),
+  E7149("Invalid measure filter operator: `{0}`"),
+  E7151("Too many combinations of columns or rows."),
+  E7152("Periods as filter not supported with Indicator with period offset"),
+  /* Analytics outliers */
+
+  E7180(
+      "The analytics outliers data does not exist. Please ensure analytics job was run and did not skip the outliers"),
+  E7181("Column `{0}` specified, in orderBy, is not eligible for orderBy or does not exist"),
 
   /* Event analytics */
   E7200(Constants.AT_LEAST_ONE_ORGANISATION_UNIT_MUST_BE_SPECIFIED),

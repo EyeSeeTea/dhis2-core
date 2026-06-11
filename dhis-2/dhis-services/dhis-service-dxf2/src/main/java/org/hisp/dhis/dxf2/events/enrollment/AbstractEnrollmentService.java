@@ -32,7 +32,7 @@ import static org.apache.commons.collections4.CollectionUtils.isNotEmpty;
 import static org.apache.commons.lang3.ObjectUtils.defaultIfNull;
 import static org.hisp.dhis.common.Pager.DEFAULT_PAGE_SIZE;
 import static org.hisp.dhis.common.SlimPager.FIRST_PAGE;
-import static org.hisp.dhis.system.notification.NotificationLevel.ERROR;
+import static org.hisp.dhis.notification.NotificationLevel.ERROR;
 import static org.hisp.dhis.trackedentity.TrackedEntityAttributeService.TEA_VALUE_MAX_LENGTH;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -78,6 +78,7 @@ import org.hisp.dhis.dxf2.importsummary.ImportStatus;
 import org.hisp.dhis.dxf2.importsummary.ImportSummaries;
 import org.hisp.dhis.dxf2.importsummary.ImportSummary;
 import org.hisp.dhis.i18n.I18nManager;
+import org.hisp.dhis.notification.NotificationLevel;
 import org.hisp.dhis.organisationunit.FeatureType;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.program.Program;
@@ -101,7 +102,6 @@ import org.hisp.dhis.scheduling.JobConfiguration;
 import org.hisp.dhis.schema.SchemaService;
 import org.hisp.dhis.security.Authorities;
 import org.hisp.dhis.system.callable.IdentifiableObjectCallable;
-import org.hisp.dhis.system.notification.NotificationLevel;
 import org.hisp.dhis.system.notification.Notifier;
 import org.hisp.dhis.system.util.GeoUtils;
 import org.hisp.dhis.trackedentity.TrackedEntityAttribute;
@@ -593,7 +593,9 @@ public abstract class AbstractEnrollmentService implements EnrollmentService {
     programInstance.setCreatedByUserInfo(UserInfoSnapshot.from(importOptions.getUser()));
     programInstance.setLastUpdatedByUserInfo(UserInfoSnapshot.from(importOptions.getUser()));
 
-    programInstanceService.addProgramInstance(programInstance, importOptions.getUser());
+    if (!importOptions.isDryRun()) {
+      programInstanceService.addProgramInstance(programInstance, importOptions.getUser());
+    }
 
     importSummary = validateProgramInstance(program, programInstance, enrollment, importSummary);
 
@@ -618,7 +620,9 @@ public abstract class AbstractEnrollmentService implements EnrollmentService {
     programInstance.setFollowup(enrollment.getFollowup());
     programInstance.setStoredBy(storedBy);
 
-    programInstanceService.updateProgramInstance(programInstance, importOptions.getUser());
+    if (!importOptions.isDryRun()) {
+      programInstanceService.updateProgramInstance(programInstance, importOptions.getUser());
+    }
     trackerOwnershipAccessManager.assignOwnership(
         daoTrackedEntityInstance, program, organisationUnit, true, true);
     saveTrackedEntityComment(programInstance, enrollment, importOptions.getUser());
@@ -939,7 +943,9 @@ public abstract class AbstractEnrollmentService implements EnrollmentService {
 
     updateFeatureType(program, enrollment, programInstance);
 
-    if (EnrollmentStatus.fromProgramStatus(programInstance.getStatus()) != enrollment.getStatus()) {
+    if (!importOptions.isDryRun()
+        && EnrollmentStatus.fromProgramStatus(programInstance.getStatus())
+            != enrollment.getStatus()) {
       Date endDate = enrollment.getCompletedDate();
 
       String user = enrollment.getCompletedBy();
@@ -977,11 +983,12 @@ public abstract class AbstractEnrollmentService implements EnrollmentService {
 
     programInstance.setLastUpdatedByUserInfo(UserInfoSnapshot.from(importOptions.getUser()));
 
-    programInstanceService.updateProgramInstance(programInstance, importOptions.getUser());
-    teiService.updateTrackedEntityInstance(
-        programInstance.getEntityInstance(), importOptions.getUser());
-
-    saveTrackedEntityComment(programInstance, enrollment, importOptions.getUser());
+    if (!importOptions.isDryRun()) {
+      programInstanceService.updateProgramInstance(programInstance, importOptions.getUser());
+      teiService.updateTrackedEntityInstance(
+          programInstance.getEntityInstance(), importOptions.getUser());
+      saveTrackedEntityComment(programInstance, enrollment, importOptions.getUser());
+    }
 
     importSummary = new ImportSummary(enrollment.getEnrollment()).incrementUpdated();
     importSummary.setReference(enrollment.getEnrollment());
@@ -1061,13 +1068,15 @@ public abstract class AbstractEnrollmentService implements EnrollmentService {
       }
 
       programInstance.setLastUpdatedByUserInfo(UserInfoSnapshot.from(importOptions.getUser()));
-      programInstanceService.deleteProgramInstance(programInstance);
-
+      if (!importOptions.isDryRun()) {
+        programInstanceService.deleteProgramInstance(programInstance);
+      }
       TrackedEntityInstance entity = programInstance.getEntityInstance();
       entity.setLastUpdatedByUserInfo(UserInfoSnapshot.from(importOptions.getUser()));
 
-      teiService.updateTrackedEntityInstance(entity);
-
+      if (!importOptions.isDryRun()) {
+        teiService.updateTrackedEntityInstance(entity);
+      }
       importSummary.setReference(uid);
       importSummary.setStatus(ImportStatus.SUCCESS);
       importSummary.setDescription("Deletion of enrollment " + uid + " was successful");
@@ -1423,9 +1432,10 @@ public abstract class AbstractEnrollmentService implements EnrollmentService {
               value.setValue(newValue);
               value.setStoredBy(getStoredBy(enrollmentAttribute, importOptions.getUser()));
 
-              trackedEntityAttributeValueService.updateTrackedEntityAttributeValue(
-                  value, importOptions.getUser());
-
+              if (!importOptions.isDryRun()) {
+                trackedEntityAttributeValueService.updateTrackedEntityAttributeValue(
+                    value, importOptions.getUser());
+              }
               attributeValueMap.remove(value.getAttribute().getUid());
             });
 
@@ -1440,9 +1450,10 @@ public abstract class AbstractEnrollmentService implements EnrollmentService {
         value.setValue(enrollmentAttribute.getValue());
         value.setAttribute(attribute);
         value.setStoredBy(getStoredBy(enrollmentAttribute, importOptions.getUser()));
-
-        trackedEntityAttributeValueService.addTrackedEntityAttributeValue(value);
-        trackedEntityInstance.addAttributeValue(value);
+        if (!importOptions.isDryRun()) {
+          trackedEntityAttributeValueService.addTrackedEntityAttributeValue(value);
+          trackedEntityInstance.addAttributeValue(value);
+        }
       }
     }
   }

@@ -27,17 +27,32 @@
  */
 package org.hisp.dhis.dxf2.metadata;
 
+import static java.util.stream.Collectors.toList;
+
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Session;
 import org.hisp.dhis.category.CategoryDimension;
 import org.hisp.dhis.category.CategoryOption;
 import org.hisp.dhis.common.BaseAnalyticalObject;
 import org.hisp.dhis.common.DataDimensionItem;
+import org.hisp.dhis.common.DimensionalItemObject;
+import org.hisp.dhis.common.DimensionalObject;
 import org.hisp.dhis.common.IdentifiableObjectManager;
 import org.hisp.dhis.dxf2.metadata.objectbundle.ObjectBundle;
+import org.hisp.dhis.eventvisualization.EventVisualization;
+import org.hisp.dhis.expressiondimensionitem.ExpressionDimensionItem;
 import org.hisp.dhis.legend.LegendSet;
+import org.hisp.dhis.organisationunit.OrganisationUnitGroup;
+import org.hisp.dhis.organisationunit.OrganisationUnitGroupSet;
+import org.hisp.dhis.organisationunit.OrganisationUnitGroupSetDimension;
+import org.hisp.dhis.period.Period;
+import org.hisp.dhis.period.PeriodType;
+import org.hisp.dhis.period.RelativePeriodEnum;
+import org.hisp.dhis.period.RelativePeriods;
 import org.hisp.dhis.preheat.PreheatService;
 import org.hisp.dhis.schema.Schema;
 import org.hisp.dhis.trackedentity.TrackedEntityAttributeDimension;
@@ -61,7 +76,151 @@ public class DefaultAnalyticalObjectImportHandler implements AnalyticalObjectImp
     handleDataElementDimensions(session, schema, analyticalObject, bundle);
     handleAttributeDimensions(session, schema, analyticalObject, bundle);
     handleProgramIndicatorDimensions(session, schema, analyticalObject, bundle);
-    handleVisualizationLegendSet(schema, analyticalObject, bundle);
+    handleAnalyticalLegendSet(schema, analyticalObject, bundle);
+    handleRelativePeriods(schema, analyticalObject);
+    handleOrgUnitGroupSetDimensions(session, schema, analyticalObject, bundle);
+  }
+
+  /**
+   * This method implements required custom handling for {@link OrganisationUnitGroupSetDimension}s.
+   * Without it, when importing, these objects throw TransientObjectException.
+   *
+   * <p>There are 2 parts to the handling: <br>
+   * 1. The dimension {@link OrganisationUnitGroupSet}
+   *
+   * <pre>
+   *  a. If available from the bundle preheat, use this instance.
+   *  b. Otherwise use from persisted if it exists, and then add to the bundle for `connectReferences`
+   * </pre>
+   *
+   * 2. The items: List of {@link OrganisationUnitGroup}
+   *
+   * <pre>
+   *  a. If available from the bundle preheat, use this instance.
+   *  b. Otherwise use from persisted if it exists, and then add to the bundle for `connectReferences`
+   * </pre>
+   *
+   * <p>
+   *
+   * @param session session to save object
+   * @param schema schema to check object property
+   * @param analyticalObject object that needs custom handling
+   * @param bundle bundle with preheat objects
+   */
+  private void handleOrgUnitGroupSetDimensions(
+      Session session, Schema schema, BaseAnalyticalObject analyticalObject, ObjectBundle bundle) {
+    if (!schema.hasPersistedProperty("organisationUnitGroupSetDimensions")) return;
+
+    for (OrganisationUnitGroupSetDimension organisationUnitGroupSetDimension :
+        analyticalObject.getOrganisationUnitGroupSetDimensions()) {
+
+      // handle dimension
+      OrganisationUnitGroupSet orgUnitGroupSetBundle =
+          bundle
+              .getPreheat()
+              .get(bundle.getPreheatIdentifier(), organisationUnitGroupSetDimension.getDimension());
+
+      // use from bundle if available
+      if (orgUnitGroupSetBundle != null) {
+        organisationUnitGroupSetDimension.setDimension(orgUnitGroupSetBundle);
+      } else {
+        // use from persisted if available
+        OrganisationUnitGroupSet orgUnitGroupSetPersisted =
+            objectManager.get(
+                OrganisationUnitGroupSet.class,
+                organisationUnitGroupSetDimension.getDimension().getUid());
+
+        if (orgUnitGroupSetPersisted != null) {
+          organisationUnitGroupSetDimension.setDimension(orgUnitGroupSetPersisted);
+
+          bundle
+              .getPreheat()
+              .put(bundle.getPreheatIdentifier(), organisationUnitGroupSetDimension.getDimension());
+        }
+      }
+
+      // handle items
+      List<OrganisationUnitGroup> organisationUnitGroups =
+          new ArrayList<>(organisationUnitGroupSetDimension.getItems());
+      organisationUnitGroupSetDimension.getItems().clear();
+
+      organisationUnitGroups.forEach(
+          oug -> {
+            // use from bundle if available
+            OrganisationUnitGroup orgUnitGroupBundle =
+                bundle.getPreheat().get(bundle.getPreheatIdentifier(), oug);
+            if (orgUnitGroupBundle != null) {
+              organisationUnitGroupSetDimension.getItems().add(orgUnitGroupBundle);
+            } else {
+              // use from persisted if available
+              OrganisationUnitGroup orgUnitGroupPersisted =
+                  objectManager.get(OrganisationUnitGroup.class, oug.getUid());
+              if (orgUnitGroupPersisted != null) {
+                organisationUnitGroupSetDimension.getItems().add(orgUnitGroupPersisted);
+                bundle.getPreheat().put(bundle.getPreheatIdentifier(), orgUnitGroupPersisted);
+              }
+            }
+          });
+
+      preheatService.connectReferences(
+          organisationUnitGroupSetDimension, bundle.getPreheat(), bundle.getPreheatIdentifier());
+
+      session.save(organisationUnitGroupSetDimension);
+    }
+  }
+
+  private void handleRelativePeriods(Schema schema, BaseAnalyticalObject analyticalObject) {
+    if (!schema.hasPersistedProperty("rawPeriods")) return;
+
+    Set<String> rawPeriods = new LinkedHashSet<>();
+
+    addRawPeriods(analyticalObject.getRows(), rawPeriods);
+    addRawPeriods(analyticalObject.getColumns(), rawPeriods);
+    addRawPeriods(analyticalObject.getFilters(), rawPeriods);
+
+    RelativePeriods relativePeriods = analyticalObject.getRelatives();
+
+    if (relativePeriods != null) {
+      rawPeriods.addAll(
+          relativePeriods.getRelativePeriodEnums().stream().map(Enum::name).collect(toList()));
+    }
+
+    analyticalObject.setRawPeriods(new ArrayList<>(rawPeriods));
+  }
+
+  /**
+   * Adds to the Set of periods, the periods present in the given list of {@link DimensionalObject},
+   * if any.
+   *
+   * @param dimObjects the list of {@link DimensionalObject}.
+   * @param rawPeriods the list of periods.
+   */
+  private void addRawPeriods(List<DimensionalObject> dimObjects, Set<String> rawPeriods) {
+    if (dimObjects != null) {
+      for (DimensionalObject dimObject : dimObjects) {
+        if (dimObject.hasItems()) {
+          addRawPeriods(dimObject, rawPeriods);
+        }
+      }
+    }
+  }
+
+  /**
+   * Adds to the Set of periods, the periods present in the given list of {@link DimensionalObject},
+   * if any.
+   *
+   * @param dimObject the {@link DimensionalObject} where to get the periods from.
+   * @param rawPeriods the list of periods.
+   */
+  private void addRawPeriods(DimensionalObject dimObject, Set<String> rawPeriods) {
+    for (DimensionalItemObject item : dimObject.getItems()) {
+      String period = item.getUid();
+      Period isoPeriod = PeriodType.getPeriodFromIsoString(period);
+
+      if (RelativePeriodEnum.contains(period) || isoPeriod != null) {
+        rawPeriods.add(period);
+      }
+    }
   }
 
   /**
@@ -72,46 +231,45 @@ public class DefaultAnalyticalObjectImportHandler implements AnalyticalObjectImp
    * @param analyticalObject the analytic object to be processed
    * @param bundle current {@link ObjectBundle}
    */
-  private void handleVisualizationLegendSet(
+  private void handleAnalyticalLegendSet(
       Schema schema, BaseAnalyticalObject analyticalObject, ObjectBundle bundle) {
-    if (!schema.getKlass().isAssignableFrom(Visualization.class)) {
+    if (!EventVisualization.class.isAssignableFrom(schema.getKlass())
+        && !Visualization.class.isAssignableFrom(schema.getKlass())) {
       return;
     }
 
-    Visualization visualization = (Visualization) analyticalObject;
-
-    if (visualization.getLegendDefinitions() == null
-        || visualization.getLegendDefinitions().getLegendSet() == null) {
+    if (analyticalObject.getLegendDefinitions() == null
+        || analyticalObject.getLegendDefinitions().getLegendSet() == null) {
       return;
     }
 
-    String legendSetId = visualization.getLegendDefinitions().getLegendSet().getUid();
+    String legendSetId = analyticalObject.getLegendDefinitions().getLegendSet().getUid();
     LegendSet legendSet =
         bundle.getPreheat().get(bundle.getPreheatIdentifier(), LegendSet.class, legendSetId);
 
     if (legendSet != null) {
-      visualization.getLegendDefinitions().setLegendSet(legendSet);
+      analyticalObject.getLegendDefinitions().setLegendSet(legendSet);
       return;
     }
 
     legendSet = objectManager.get(LegendSet.class, legendSetId);
 
     if (legendSet != null) {
-      visualization.getLegendDefinitions().setLegendSet(legendSet);
+      analyticalObject.getLegendDefinitions().setLegendSet(legendSet);
       bundle.getPreheat().put(bundle.getPreheatIdentifier(), legendSet);
       return;
     }
 
     // Add new LegendSet
     preheatService.connectReferences(
-        visualization.getLegendDefinitions().getLegendSet(),
+        analyticalObject.getLegendDefinitions().getLegendSet(),
         bundle.getPreheat(),
         bundle.getPreheatIdentifier());
-    objectManager.save(visualization.getLegendDefinitions().getLegendSet());
+    objectManager.save(analyticalObject.getLegendDefinitions().getLegendSet());
 
     bundle
         .getPreheat()
-        .put(bundle.getPreheatIdentifier(), visualization.getLegendDefinitions().getLegendSet());
+        .put(bundle.getPreheatIdentifier(), analyticalObject.getLegendDefinitions().getLegendSet());
   }
 
   private void handleDataDimensionItems(
@@ -188,6 +346,18 @@ public class DefaultAnalyticalObjectImportHandler implements AnalyticalObjectImp
                     .get(
                         bundle.getPreheatIdentifier(),
                         dataDimensionItem.getProgramAttribute().getAttribute()));
+      }
+
+      // handle expression dimension item
+      ExpressionDimensionItem expressionDimensionItem =
+          dataDimensionItem.getExpressionDimensionItem();
+      if (expressionDimensionItem != null) {
+        ExpressionDimensionItem expressionDimensionItemBundle =
+            bundle.getPreheat().get(bundle.getPreheatIdentifier(), expressionDimensionItem);
+        // use bundle object if available to avoid transient exception
+        if (expressionDimensionItemBundle != null) {
+          dataDimensionItem.setExpressionDimensionItem(expressionDimensionItemBundle);
+        }
       }
 
       preheatService.connectReferences(

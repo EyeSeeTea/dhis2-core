@@ -30,9 +30,12 @@ package org.hisp.dhis.association.jdbc;
 import java.sql.Array;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.collections4.SetValuedMap;
 import org.apache.commons.collections4.multimap.HashSetValuedHashMap;
@@ -53,7 +56,7 @@ public class JdbcOrgUnitAssociationsStore {
   private final Cache<Set<String>> orgUnitAssociationCache;
 
   public SetValuedMap<String, String> getOrganisationUnitsAssociationsForCurrentUser(
-      Set<String> uids) {
+      Set<String> uids, boolean filterNulls) {
     if (uids.isEmpty()) {
       return new HashSetValuedHashMap<>();
     }
@@ -65,8 +68,12 @@ public class JdbcOrgUnitAssociationsStore {
         resultSet -> {
           SetValuedMap<String, String> setValuedMap = new HashSetValuedHashMap<>();
           while (resultSet.next()) {
-            setValuedMap.putAll(
-                resultSet.getString(1), Arrays.asList((String[]) resultSet.getArray(2).getArray()));
+            String[] arr = (String[]) resultSet.getArray(2).getArray();
+            List<String> values =
+                filterNulls
+                    ? Stream.of(arr).filter(Objects::nonNull).collect(Collectors.toList())
+                    : Arrays.asList(arr);
+            setValuedMap.putAll(resultSet.getString(1), values);
           }
           return setValuedMap;
         });
@@ -104,7 +111,7 @@ public class JdbcOrgUnitAssociationsStore {
   private Set<String> getUserOrgUnitPaths() {
     Set<String> allUserOrgUnitPaths =
         currentUserService.getCurrentUserOrganisationUnits().stream()
-            .map(OrganisationUnit::getPath)
+            .map(OrganisationUnit::getStoredPath)
             .collect(Collectors.toSet());
 
     return allUserOrgUnitPaths.stream()

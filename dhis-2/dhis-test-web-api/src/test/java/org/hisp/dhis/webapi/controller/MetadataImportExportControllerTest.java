@@ -36,24 +36,37 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.geojson.GeoJsonObject;
 import org.geojson.Polygon;
+import org.hisp.dhis.category.CategoryCombo;
+import org.hisp.dhis.dataelement.DataElement;
+import org.hisp.dhis.dataelement.DataElementService;
 import org.hisp.dhis.feedback.ErrorCode;
+import org.hisp.dhis.jsontree.JsonArray;
 import org.hisp.dhis.jsontree.JsonList;
 import org.hisp.dhis.jsontree.JsonObject;
 import org.hisp.dhis.jsontree.JsonResponse;
 import org.hisp.dhis.jsontree.JsonValue;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.web.HttpStatus;
+import org.hisp.dhis.web.WebClient;
 import org.hisp.dhis.webapi.DhisControllerConvenienceTest;
 import org.hisp.dhis.webapi.json.domain.JsonAttributeValue;
+import org.hisp.dhis.webapi.json.domain.JsonDataElement;
+import org.hisp.dhis.webapi.json.domain.JsonDataSet;
 import org.hisp.dhis.webapi.json.domain.JsonErrorReport;
 import org.hisp.dhis.webapi.json.domain.JsonIdentifiableObject;
 import org.hisp.dhis.webapi.json.domain.JsonImportSummary;
+import org.hisp.dhis.webapi.json.domain.JsonSection;
 import org.hisp.dhis.webapi.json.domain.JsonTypeReport;
 import org.hisp.dhis.webapi.json.domain.JsonWebMessage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /**
  * Tests the {@link org.hisp.dhis.webapi.controller.metadata.MetadataImportExportController} using
@@ -62,6 +75,9 @@ import org.junit.jupiter.api.Test;
  * @author Jan Bernitt
  */
 class MetadataImportExportControllerTest extends DhisControllerConvenienceTest {
+
+  @Autowired private DataElementService dataElementService;
+
   @Test
   void testPostJsonMetadata() {
     assertWebMessage(
@@ -508,5 +524,246 @@ class MetadataImportExportControllerTest extends DhisControllerConvenienceTest {
             .find(
                 JsonErrorReport.class, errorReport -> errorReport.getErrorCode() == ErrorCode.E4030)
             .getMessage());
+  }
+
+  @Test
+  @DisplayName(
+      "DataElements with default categoryCombo should be present in payload when defaults are INCLUDE by default")
+  void metadataWithCatComboFieldsIncludingDefaultsTest() {
+    CategoryCombo catComboA = createCategoryCombo('A');
+    CategoryCombo catComboB = createCategoryCombo('B');
+    CategoryCombo catComboC = createCategoryCombo('C');
+    categoryService.addCategoryCombo(catComboA);
+    categoryService.addCategoryCombo(catComboB);
+    categoryService.addCategoryCombo(catComboC);
+
+    setupDataElementsWithCatCombos(catComboA, catComboB, catComboC);
+
+    JsonArray dataElements =
+        GET("/metadata?fields=id,name,categoryCombo[id,name]&dataElements=true")
+            .content(HttpStatus.OK)
+            .getArray("dataElements");
+
+    assertEquals(
+        Set.of(catComboA.getUid(), catComboB.getUid(), catComboC.getUid(), "bjDvmb4bfuf"),
+        dataElements.asList(JsonObject.class).stream()
+            .map(jde -> jde.as(JsonDataElement.class))
+            .map(JsonDataElement::getCategoryCombo)
+            .map(JsonIdentifiableObject::getId)
+            .collect(Collectors.toSet()),
+        "Returned cat combo IDs equal custom cat combos and default cat combo Ids");
+  }
+
+  @Test
+  @DisplayName(
+      "DataElements in payload should not include the default categoryCombo when EXCLUDE used")
+  void metadataExcludingDefaultCatComboTest() {
+    CategoryCombo catComboA = createCategoryCombo('A');
+    CategoryCombo catComboB = createCategoryCombo('B');
+    CategoryCombo catComboC = createCategoryCombo('C');
+    categoryService.addCategoryCombo(catComboA);
+    categoryService.addCategoryCombo(catComboB);
+    categoryService.addCategoryCombo(catComboC);
+
+    setupDataElementsWithCatCombos(catComboA, catComboB, catComboC);
+
+    JsonArray dataElements =
+        GET("/metadata?fields=id,name,categoryCombo[id,name]&defaults=EXCLUDE&dataElements=true")
+            .content(HttpStatus.OK)
+            .getArray("dataElements");
+
+    // get map of data elements with/without cat combo
+    Map<Boolean, List<JsonValue>> deWithCatCombo =
+        dataElements.asList(JsonObject.class).stream()
+            .collect(
+                Collectors.partitioningBy(
+                    jv -> {
+                      JsonDataElement jsonDataElement = jv.as(JsonDataElement.class);
+                      return jsonDataElement.getCategoryCombo() != null;
+                    }));
+
+    assertEquals(
+        3,
+        deWithCatCombo.get(true).size(),
+        "There should be 3 dataElements with a cat combo field");
+
+    assertEquals(
+        1,
+        deWithCatCombo.get(false).size(),
+        "There should be 1 dataElement without a cat combo field");
+
+    assertEquals(
+        Set.of(catComboA.getUid(), catComboB.getUid(), catComboC.getUid()),
+        deWithCatCombo.get(true).stream()
+            .map(jde -> jde.as(JsonDataElement.class))
+            .map(JsonDataElement::getCategoryCombo)
+            .map(JsonIdentifiableObject::getId)
+            .collect(Collectors.toSet()),
+        "Returned cat combo IDs equal custom cat combos Ids only");
+  }
+
+  @Test
+  @DisplayName("Importing Map with MapView with pre-existing OrgUnitGroupSetDimensions succeeds")
+  void importingMapWithMapViewAndOrgUnitGroupSetDimensionsExistingTest() {
+    // Given org unit metadata exists
+    JsonImportSummary report1 =
+        POST("/metadata", WebClient.Body("metadata/metadata_org_unit_group.json"))
+            .content()
+            .get("response")
+            .as(JsonImportSummary.class);
+    assertEquals("OK", report1.getStatus());
+
+    // When importing a Map with MapView that references an existing OrgUnitGroupSetDimension
+    JsonImportSummary report2 =
+        POST("/metadata", WebClient.Body("metadata/metadata_map_mapview.json"))
+            .content()
+            .get("response")
+            .as(JsonImportSummary.class);
+
+    // Then the import is successful and the OrgUnitGroupSetDimension is present when retrieved
+    assertEquals("OK", report2.getStatus());
+
+    JsonResponse content = GET("/maps/d7x2WOLhCA8").content(HttpStatus.OK);
+
+    assertEquals(
+        "J5jldMd8OHv",
+        content
+            .getArray("mapViews")
+            .getObject(0)
+            .getArray("organisationUnitGroupSetDimensions")
+            .getObject(0)
+            .getObject("organisationUnitGroupSet")
+            .getString("id")
+            .string());
+
+    assertEquals(
+        "uYxK4wmcPqA",
+        content
+            .getArray("mapViews")
+            .getObject(0)
+            .getArray("organisationUnitGroupSetDimensions")
+            .getObject(0)
+            .getArray("organisationUnitGroups")
+            .getObject(0)
+            .getString("id")
+            .string());
+  }
+
+  @Test
+  @DisplayName("Importing Map with MapView with OrgUnitGroupSetDimensions in same import succeeds")
+  void importingMapWithMapViewAndOrgUnitGroupSetDimensionsPayloadTest() {
+    // When importing a Map with MapView that references OrgUnitGroupSet data in the same import
+    JsonImportSummary report =
+        POST(
+                "/metadata",
+                WebClient.Body("metadata/metadata_map_mapview_with_org_unit_group_dimension.json"))
+            .content()
+            .get("response")
+            .as(JsonImportSummary.class);
+
+    // Then the import is successful and the OrgUnitGroupSetDimension is present when retrieved
+    assertEquals("OK", report.getStatus());
+
+    JsonResponse content = GET("/maps/A7x2WOLhCA8").content(HttpStatus.OK);
+
+    assertEquals(
+        "A5jldMd8OHv",
+        content
+            .getArray("mapViews")
+            .getObject(0)
+            .getArray("organisationUnitGroupSetDimensions")
+            .getObject(0)
+            .getObject("organisationUnitGroupSet")
+            .getString("id")
+            .string());
+
+    assertEquals(
+        "AYxK4wmcPqA",
+        content
+            .getArray("mapViews")
+            .getObject(0)
+            .getArray("organisationUnitGroupSetDimensions")
+            .getObject(0)
+            .getArray("organisationUnitGroups")
+            .getObject(0)
+            .getString("id")
+            .string());
+  }
+
+  @Test
+  @DisplayName(
+      "When removing an Indicator from a DataSet, it should be removed from the DataSet's Sections also")
+  void removeDataSetIndicatorTest() {
+    // Given a DataSet exists with 2 DataElements, 2 Indicators &
+    // 1 Section, which has the same 2 DataElements & 2 Indicators
+    POST("/metadata", WebClient.Body("dataset/dataset_with_dataelements_indicators_section.json"))
+        .content(HttpStatus.OK);
+
+    JsonDataSet dataSet = GET("/dataSets/dsUid0000x1").content(HttpStatus.OK).as(JsonDataSet.class);
+    assertEquals(2, dataSet.getDatSetElements().size());
+    assertEquals(2, dataSet.getIndicators().size());
+    assertEquals(1, dataSet.getSections().size());
+    assertTrue(
+        dataSet.getIndicators().stream()
+            .map(JsonIdentifiableObject::getId)
+            .collect(Collectors.toList())
+            .containsAll(List.of("IndUid000x1", "IndUid000x2")));
+
+    JsonSection section = GET("/sections/SectUid00x1").content(HttpStatus.OK).as(JsonSection.class);
+    assertEquals(2, section.getDataElements().size());
+    assertEquals(2, section.getIndicators().size());
+    assertTrue(
+        section.getDataElements().stream()
+            .map(JsonIdentifiableObject::getId)
+            .collect(Collectors.toList())
+            .containsAll(List.of("DeUid0000x1", "DeUid0000x2")));
+    assertTrue(
+        section.getIndicators().stream()
+            .map(JsonIdentifiableObject::getId)
+            .collect(Collectors.toList())
+            .containsAll(List.of("IndUid000x1", "IndUid000x2")));
+
+    // When removing 1 DataElement & 1 Indicator from the DataSet
+    POST("/metadata", WebClient.Body("dataset/dataset_remove_dataelement_indicator.json"))
+        .content(HttpStatus.OK);
+
+    // Then the DataSet should have only 1 DataElement & 1 Indicator
+    JsonDataSet dataSet2 =
+        GET("/dataSets/dsUid0000x1").content(HttpStatus.OK).as(JsonDataSet.class);
+    assertEquals(1, dataSet2.getDatSetElements().size());
+    assertEquals(1, dataSet2.getIndicators().size());
+    assertEquals(1, dataSet2.getSections().size());
+    assertTrue(
+        dataSet2.getIndicators().stream()
+            .map(JsonIdentifiableObject::getId)
+            .collect(Collectors.toList())
+            .contains("IndUid000x1"));
+
+    // And the Section should also only have 1 DataElement & 1 Indicator
+    JsonSection section2 =
+        GET("/sections/SectUid00x1").content(HttpStatus.OK).as(JsonSection.class);
+    assertEquals(1, section2.getDataElements().size());
+    assertEquals(1, section2.getIndicators().size());
+    assertTrue(
+        section2.getDataElements().stream()
+            .map(JsonIdentifiableObject::getId)
+            .collect(Collectors.toList())
+            .contains("DeUid0000x1"));
+    assertTrue(
+        section2.getIndicators().stream()
+            .map(JsonIdentifiableObject::getId)
+            .collect(Collectors.toList())
+            .contains("IndUid000x1"));
+  }
+
+  private void setupDataElementsWithCatCombos(CategoryCombo... categoryCombos) {
+    DataElement deA = createDataElement('A', categoryCombos[0]);
+    DataElement deB = createDataElement('B', categoryCombos[1]);
+    DataElement deC = createDataElement('C', categoryCombos[2]);
+    DataElement deZ = createDataElement('Z');
+    dataElementService.addDataElement(deA);
+    dataElementService.addDataElement(deB);
+    dataElementService.addDataElement(deC);
+    dataElementService.addDataElement(deZ);
   }
 }

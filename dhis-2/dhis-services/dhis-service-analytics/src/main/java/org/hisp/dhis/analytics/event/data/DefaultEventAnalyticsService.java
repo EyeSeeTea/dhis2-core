@@ -197,8 +197,9 @@ public class DefaultEventAnalyticsService extends AbstractAnalyticsService
       DatabaseInfo databaseInfo,
       AnalyticsCache analyticsCache,
       EnrollmentAnalyticsManager enrollmentAnalyticsManager,
-      SchemaIdResponseMapper schemaIdResponseMapper) {
-    super(securityManager, queryValidator, schemaIdResponseMapper);
+      SchemaIdResponseMapper schemaIdResponseMapper,
+      OrganisationUnitResolver organisationUnitResolver) {
+    super(securityManager, queryValidator, schemaIdResponseMapper, organisationUnitResolver);
 
     checkNotNull(dataElementService);
     checkNotNull(trackedEntityAttributeService);
@@ -776,7 +777,7 @@ public class DefaultEventAnalyticsService extends AbstractAnalyticsService
    * @return the count of events.
    */
   @Override
-  protected long addEventData(Grid grid, EventQueryParams params) {
+  protected long addData(Grid grid, EventQueryParams params) {
     Timer timer = new Timer().start().disablePrint();
 
     params = queryPlanner.planEventQuery(params);

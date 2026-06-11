@@ -30,6 +30,7 @@ package org.hisp.dhis.actions.metadata;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.not;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import java.io.File;
 import org.hisp.dhis.actions.RestApiActions;
@@ -51,6 +52,24 @@ public class MetadataActions extends RestApiActions {
     queryParamsBuilder.addAll("importReportMode=FULL");
 
     ApiResponse response = postFile(file, queryParamsBuilder);
+    response.validate().statusCode(200);
+
+    return new MetadataApiResponse(response);
+  }
+
+  public MetadataApiResponse importMetadata(String metadata, String... queryParams) {
+    JsonObject json = new Gson().fromJson(metadata, JsonObject.class);
+    ApiResponse response = importMetadata(json, queryParams);
+    return new MetadataApiResponse(response);
+  }
+
+  public MetadataApiResponse importMetadataWithContentType(
+      File file, String contentType, String... queryParams) {
+    QueryParamsBuilder queryParamsBuilder = new QueryParamsBuilder();
+    queryParamsBuilder.addAll(queryParams);
+    queryParamsBuilder.addAll("importReportMode=FULL");
+
+    ApiResponse response = postFileWithContentType(file, queryParamsBuilder, contentType);
     response.validate().statusCode(200);
 
     return new MetadataApiResponse(response);

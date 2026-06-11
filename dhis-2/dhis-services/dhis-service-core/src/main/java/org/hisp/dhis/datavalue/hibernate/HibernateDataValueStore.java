@@ -185,13 +185,22 @@ public class HibernateDataValueStore extends HibernateGenericStore<DataValue>
 
     dataValue.setPeriod(storedPeriod);
 
-    CriteriaBuilder builder = getCriteriaBuilder();
+    String sql =
+        "select * from datavalue where dataelementid = :deid\n"
+            + "and periodid = :periodid\n"
+            + "and attributeoptioncomboid = :attributeOptionCombo\n"
+            + "and categoryoptioncomboid = :categoryOptionCombo\n"
+            + "and sourceid = :sourceid\n"
+            + "and deleted is true";
 
     return getSingleResult(
-        builder,
-        newJpaParameters()
-            .addPredicate(root -> builder.equal(root, dataValue))
-            .addPredicate(root -> builder.equal(root.get(DELETED), true)));
+        getSession()
+            .createNativeQuery(sql, DataValue.class)
+            .setParameter("deid", dataValue.getDataElement().getId())
+            .setParameter("periodid", storedPeriod.getId())
+            .setParameter("attributeOptionCombo", dataValue.getAttributeOptionCombo().getId())
+            .setParameter("categoryOptionCombo", dataValue.getCategoryOptionCombo().getId())
+            .setParameter("sourceid", dataValue.getSource().getId()));
   }
 
   @Override
@@ -306,7 +315,7 @@ public class HibernateDataValueStore extends HibernateGenericStore<DataValue>
 
       hql.append(
           params.getOrganisationUnits().stream()
-              .map(OrganisationUnit::getPath)
+              .map(OrganisationUnit::getStoredPath)
               .map(p -> "ou.path like '" + p + "%'")
               .collect(joining(" or ")));
 
@@ -537,7 +546,7 @@ public class HibernateDataValueStore extends HibernateGenericStore<DataValue>
           where
               .append(sqlHelper.or())
               .append("ou.path like '")
-              .append(parent.getPath())
+              .append(parent.getStoredPath())
               .append("%'");
         }
 

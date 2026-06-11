@@ -29,11 +29,13 @@ package org.hisp.dhis.webapi.controller;
 
 import java.io.IOException;
 import java.util.Optional;
+import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.hisp.dhis.common.DhisApiVersion;
 import org.hisp.dhis.common.OpenApi;
 import org.hisp.dhis.feedback.BadRequestException;
+import org.hisp.dhis.feedback.ConflictException;
 import org.hisp.dhis.feedback.ForbiddenException;
 import org.hisp.dhis.feedback.NotFoundException;
 import org.hisp.dhis.route.Route;
@@ -62,18 +64,26 @@ public class RouteController extends AbstractCrudController<Route> {
   @RequestMapping(
       value = "/{id}/run",
       method = {RequestMethod.GET, RequestMethod.POST})
-  public ResponseEntity<String> run(
+  public ResponseEntity<byte[]> run(
       @PathVariable("id") String id, @CurrentUser User user, HttpServletRequest request)
-      throws IOException, ForbiddenException, NotFoundException, BadRequestException {
+      throws IOException,
+          ForbiddenException,
+          NotFoundException,
+          BadRequestException,
+          ServletException {
     return runWithSubpath(id, user, request);
   }
 
   @RequestMapping(
       value = "/{id}/run/**",
       method = {RequestMethod.GET, RequestMethod.POST})
-  public ResponseEntity<String> runWithSubpath(
+  public ResponseEntity<byte[]> runWithSubpath(
       @PathVariable("id") String id, @CurrentUser User user, HttpServletRequest request)
-      throws IOException, ForbiddenException, NotFoundException, BadRequestException {
+      throws IOException,
+          ForbiddenException,
+          NotFoundException,
+          BadRequestException,
+          ServletException {
     Route route = routeService.getDecryptedRoute(id);
 
     if (route == null) {
@@ -86,7 +96,7 @@ public class RouteController extends AbstractCrudController<Route> {
 
     Optional<String> subPath = getSubPath(request.getPathInfo(), id);
 
-    return routeService.exec(route, user, subPath, request);
+    return routeService.execute(route, user, subPath, request);
   }
 
   private Optional<String> getSubPath(String path, String id) {
@@ -99,5 +109,15 @@ public class RouteController extends AbstractCrudController<Route> {
     }
 
     return Optional.empty();
+  }
+
+  @Override
+  protected void preCreateEntity(Route route) throws ConflictException {
+    routeService.validateRoute(route);
+  }
+
+  @Override
+  protected void preUpdateEntity(Route route, Route newRoute) throws ConflictException {
+    routeService.validateRoute(newRoute);
   }
 }

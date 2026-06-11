@@ -63,6 +63,8 @@ public interface CacheProvider {
 
   <V> Cache<V> createUserFailedLoginAttemptCache(V defaultValue);
 
+  <V> Cache<V> createDisable2FAFailedAttemptCache(V defaultValue);
+
   <V> Cache<V> createUserAccountRecoverAttemptCache(V defaultValue);
 
   <V> Cache<V> createProgramOwnerCache();
@@ -92,8 +94,6 @@ public interface CacheProvider {
   <V> Cache<V> createDataElementCache();
 
   <V> Cache<V> createPropertyTransformerCache();
-
-  <V> Cache<V> createProgramHasRulesCache();
 
   <V> Cache<V> createProgramRuleVariablesCache();
 
@@ -134,4 +134,6 @@ public interface CacheProvider {
   <V> Cache<V> createDataIntegritySummaryCache();
 
   <V> Cache<V> createDataIntegrityDetailsCache();
+
+  <V> Cache<V> createCorsWhitelistCache();
 }

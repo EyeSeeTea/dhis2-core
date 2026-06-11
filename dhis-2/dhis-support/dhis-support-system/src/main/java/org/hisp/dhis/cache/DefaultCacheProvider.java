@@ -95,6 +95,7 @@ public class DefaultCacheProvider implements CacheProvider {
     periodIdCache,
     userAccountRecoverAttempt,
     userFailedLoginAttempt,
+    twoFaDisableFailedAttempt,
     programOwner,
     programTempOwner,
     userIdCache,
@@ -128,7 +129,8 @@ public class DefaultCacheProvider implements CacheProvider {
     completedJobsInfo,
     jobCancelRequested,
     dataIntegritySummaryCache,
-    dataIntegrityDetailsCache
+    dataIntegrityDetailsCache,
+    corsWhitelistCache
   }
 
   private final Map<String, Cache<?>> allCaches = new ConcurrentHashMap<>();
@@ -283,6 +285,15 @@ public class DefaultCacheProvider implements CacheProvider {
   }
 
   @Override
+  public <V> Cache<V> createDisable2FAFailedAttemptCache(V defaultValue) {
+    return registerCache(
+        this.<V>newBuilder()
+            .forRegion(Region.twoFaDisableFailedAttempt.name())
+            .expireAfterWrite(15, MINUTES)
+            .withDefaultValue(defaultValue));
+  }
+
+  @Override
   public <V> Cache<V> createProgramOwnerCache() {
     return registerCache(
         this.<V>newBuilder()
@@ -426,17 +437,6 @@ public class DefaultCacheProvider implements CacheProvider {
             .withInitialCapacity((int) getActualSize(20))
             .forceInMemory()
             .withMaximumSize(orZeroInTestRun(getActualSize(SIZE_10K))));
-  }
-
-  @Override
-  public <V> Cache<V> createProgramHasRulesCache() {
-    return registerCache(
-        this.<V>newBuilder()
-            .forRegion(Region.programHasRulesCache.name())
-            .expireAfterWrite(3, TimeUnit.HOURS)
-            .withInitialCapacity((int) getActualSize(20))
-            .forceInMemory()
-            .withMaximumSize(orZeroInTestRun(getActualSize(SIZE_1K))));
   }
 
   @Override
@@ -627,5 +627,20 @@ public class DefaultCacheProvider implements CacheProvider {
         this.<V>newBuilder()
             .forRegion(Region.dataIntegrityDetailsCache.name())
             .expireAfterWrite(1, HOURS));
+  }
+
+  /**
+   * Cache for CORS whitelist to avoid database lookups on every HTTP request. Expires after 5
+   * minutes to pick up configuration changes.
+   */
+  @Override
+  public <V> Cache<V> createCorsWhitelistCache() {
+    return registerCache(
+        this.<V>newBuilder()
+            .forRegion(Region.corsWhitelistCache.name())
+            .expireAfterWrite(5, MINUTES)
+            .withInitialCapacity((int) getActualSize(SIZE_1))
+            .forceInMemory()
+            .withMaximumSize(orZeroInTestRun(getActualSize(SIZE_1))));
   }
 }

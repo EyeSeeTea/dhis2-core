@@ -69,7 +69,6 @@ import static org.hisp.dhis.organisationunit.OrganisationUnit.getSortedGrandChil
 import static org.hisp.dhis.period.PeriodType.getCalendar;
 import static org.hisp.dhis.period.PeriodType.getPeriodFromIsoString;
 import static org.hisp.dhis.period.RelativePeriods.getRelativePeriodsFromEnum;
-import static org.hisp.dhis.period.WeeklyPeriodType.NAME;
 import static org.hisp.dhis.setting.SettingKey.ANALYTICS_FINANCIAL_YEAR_START;
 
 import java.util.ArrayList;
@@ -99,7 +98,6 @@ import org.hisp.dhis.organisationunit.OrganisationUnitGroup;
 import org.hisp.dhis.organisationunit.OrganisationUnitService;
 import org.hisp.dhis.period.Period;
 import org.hisp.dhis.period.RelativePeriodEnum;
-import org.hisp.dhis.period.comparator.AscendingPeriodComparator;
 import org.hisp.dhis.security.acl.AclService;
 import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.user.CurrentUserService;
@@ -194,15 +192,11 @@ public class DimensionalObjectProducer {
         systemSettingManager.getSystemSetting(
             ANALYTICS_FINANCIAL_YEAR_START, AnalyticsFinancialYearStartKey.class);
 
-    boolean containsRelativePeriods = false;
-
     for (String isoPeriod : items) {
       // Contains isoPeriod and timeField
       IsoPeriodHolder isoPeriodHolder = IsoPeriodHolder.of(isoPeriod);
 
       if (RelativePeriodEnum.contains(isoPeriodHolder.getIsoPeriod())) {
-        containsRelativePeriods = true;
-
         addRelativePeriods(
             relativePeriodDate, periods, dimensionalKeywords, financialYearStart, isoPeriodHolder);
       } else {
@@ -218,10 +212,6 @@ public class DimensionalObjectProducer {
 
     // Remove duplicates
     periods = periods.stream().distinct().collect(toList());
-
-    if (containsRelativePeriods) {
-      periods.sort(new AscendingPeriodComparator());
-    }
 
     overridePeriodAttributes(periods, getCalendar());
 
@@ -338,12 +328,10 @@ public class DimensionalObjectProducer {
 
     for (Period period : periods) {
       String name = format != null ? format.formatPeriod(period) : null;
-
-      if (!period.getPeriodType().getName().contains(NAME)) {
-        period.setShortName(name);
-      }
+      String shortName = format != null ? format.formatPeriod(period, true) : null;
 
       period.setName(name);
+      period.setShortName(shortName);
 
       if (!calendar.isIso8601()) {
         period.setUid(getLocalPeriodIdentifier(period, calendar));
@@ -427,6 +415,24 @@ public class DimensionalObjectProducer {
         DISPLAY_NAME_ORGUNIT,
         orgUnitAtLevels,
         dimensionalKeywords);
+  }
+
+  /**
+   * This method will return a list of {@link OrganisationUnit} UIDs based on the given items and
+   * user organisation units.
+   *
+   * @param items the list of items that might be included into the resulting organisation unit and
+   *     its keywords.
+   * @param userOrgUnits the list of organisation units associated with the current user.
+   * @return a list of {@link OrganisationUnit} UIDs.
+   */
+  public List<String> getOrgUnitDimensionUid(
+      List<String> items, List<OrganisationUnit> userOrgUnits) {
+    return getOrgUnitDimensionItems(
+            items, userOrgUnits, IdScheme.UID, new ArrayList<>(), new ArrayList<>())
+        .stream()
+        .map(DimensionalItemObject::getUid)
+        .collect(toList());
   }
 
   /**

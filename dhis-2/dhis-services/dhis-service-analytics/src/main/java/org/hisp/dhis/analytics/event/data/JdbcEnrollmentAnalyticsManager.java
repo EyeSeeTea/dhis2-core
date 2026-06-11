@@ -58,6 +58,7 @@ import org.hisp.dhis.analytics.common.ProgramIndicatorSubqueryBuilder;
 import org.hisp.dhis.analytics.event.EnrollmentAnalyticsManager;
 import org.hisp.dhis.analytics.event.EventQueryParams;
 import org.hisp.dhis.category.CategoryOption;
+import org.hisp.dhis.common.DimensionItemType;
 import org.hisp.dhis.common.DimensionType;
 import org.hisp.dhis.common.DimensionalItemObject;
 import org.hisp.dhis.common.DimensionalObject;
@@ -123,15 +124,23 @@ public class JdbcEnrollmentAnalyticsManager extends AbstractJdbcEventAnalyticsMa
       ProgramIndicatorService programIndicatorService,
       ProgramIndicatorSubqueryBuilder programIndicatorSubqueryBuilder,
       EnrollmentTimeFieldSqlRenderer timeFieldSqlRenderer,
-      ExecutionPlanStore executionPlanStore) {
+      ExecutionPlanStore executionPlanStore,
+      OrganisationUnitResolver organisationUnitResolver) {
     super(
-        jdbcTemplate, programIndicatorService, programIndicatorSubqueryBuilder, executionPlanStore);
+        jdbcTemplate,
+        programIndicatorService,
+        programIndicatorSubqueryBuilder,
+        executionPlanStore,
+        organisationUnitResolver);
     this.timeFieldSqlRenderer = timeFieldSqlRenderer;
   }
 
   @Override
   public void getEnrollments(EventQueryParams params, Grid grid, int maxLimit) {
-    String sql = getEventsOrEnrollmentsSql(params, maxLimit);
+    String sql =
+        params.isAggregatedEnrollments()
+            ? getAggregatedEnrollmentsSql(grid.getHeaders(), params)
+            : getAggregatedEnrollmentsSql(params, maxLimit);
 
     if (params.analyzeOnly()) {
       withExceptionHandling(
@@ -448,7 +457,10 @@ public class JdbcEnrollmentAnalyticsManager extends AbstractJdbcEventAnalyticsMa
 
   @Override
   protected String getSelectClause(EventQueryParams params) {
-    List<String> selectCols = ListUtils.distinctUnion(COLUMNS, getSelectColumns(params, false));
+    List<String> selectCols =
+        ListUtils.distinctUnion(
+            params.isAggregatedEnrollments() ? List.of("pi") : COLUMNS,
+            getSelectColumns(params, false));
 
     return "select " + StringUtils.join(selectCols, ",") + " ";
   }
@@ -629,6 +641,8 @@ public class JdbcEnrollmentAnalyticsManager extends AbstractJdbcEventAnalyticsMa
           + " "
           + LIMIT_1
           + " )";
+    } else if (isOrganizationUnitProgramAttribute(item)) {
+      return quoteAlias(colName + suffix);
     } else {
       return quoteAlias(colName);
     }
@@ -642,6 +656,16 @@ public class JdbcEnrollmentAnalyticsManager extends AbstractJdbcEventAnalyticsMa
   @Override
   protected String getColumn(QueryItem item) {
     return getColumn(item, "");
+  }
+
+  /**
+   * Returns true if the item is a program attribute and the value type is an organizational unit.
+   *
+   * @param item the {@link QueryItem}.
+   */
+  private boolean isOrganizationUnitProgramAttribute(QueryItem item) {
+    return item.getValueType() == ValueType.ORGANISATION_UNIT
+        && item.getItem().getDimensionItemType() == DimensionItemType.PROGRAM_ATTRIBUTE;
   }
 
   /**
@@ -665,13 +689,16 @@ public class JdbcEnrollmentAnalyticsManager extends AbstractJdbcEventAnalyticsMa
       sb.append(" and executiondate >= ");
 
       sb.append(
-          String.format("%s ", SqlUtils.singleQuote(DateUtils.getMediumDateString(startDate))));
+          String.format(
+              "%s ", SqlUtils.singleQuoteAndEscape(DateUtils.getMediumDateString(startDate))));
     }
 
     if (endDate != null) {
       sb.append(" and executiondate <= ");
 
-      sb.append(String.format("%s ", SqlUtils.singleQuote(DateUtils.getMediumDateString(endDate))));
+      sb.append(
+          String.format(
+              "%s ", SqlUtils.singleQuoteAndEscape(DateUtils.getMediumDateString(endDate))));
     }
 
     return sb.toString();

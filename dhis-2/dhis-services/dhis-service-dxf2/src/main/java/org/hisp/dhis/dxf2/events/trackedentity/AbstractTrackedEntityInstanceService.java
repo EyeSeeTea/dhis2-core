@@ -27,7 +27,7 @@
  */
 package org.hisp.dhis.dxf2.events.trackedentity;
 
-import static org.hisp.dhis.system.notification.NotificationLevel.ERROR;
+import static org.hisp.dhis.notification.NotificationLevel.ERROR;
 import static org.hisp.dhis.trackedentity.TrackedEntityAttributeService.TEA_VALUE_MAX_LENGTH;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -57,6 +57,7 @@ import org.hisp.dhis.commons.util.DebugUtils;
 import org.hisp.dhis.dbms.DbmsManager;
 import org.hisp.dhis.dxf2.Constants;
 import org.hisp.dhis.dxf2.common.ImportOptions;
+import org.hisp.dhis.dxf2.common.ImportReportMode;
 import org.hisp.dhis.dxf2.events.RelationshipParams;
 import org.hisp.dhis.dxf2.events.TrackedEntityInstanceParams;
 import org.hisp.dhis.dxf2.events.aggregates.TrackedEntityInstanceAggregate;
@@ -66,10 +67,10 @@ import org.hisp.dhis.dxf2.importsummary.ImportConflicts;
 import org.hisp.dhis.dxf2.importsummary.ImportStatus;
 import org.hisp.dhis.dxf2.importsummary.ImportSummaries;
 import org.hisp.dhis.dxf2.importsummary.ImportSummary;
-import org.hisp.dhis.dxf2.metadata.feedback.ImportReportMode;
 import org.hisp.dhis.fileresource.FileResource;
 import org.hisp.dhis.fileresource.FileResourceService;
 import org.hisp.dhis.importexport.ImportStrategy;
+import org.hisp.dhis.notification.NotificationLevel;
 import org.hisp.dhis.organisationunit.FeatureType;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.program.Program;
@@ -85,7 +86,6 @@ import org.hisp.dhis.reservedvalue.ReservedValueService;
 import org.hisp.dhis.scheduling.JobConfiguration;
 import org.hisp.dhis.schema.SchemaService;
 import org.hisp.dhis.security.Authorities;
-import org.hisp.dhis.system.notification.NotificationLevel;
 import org.hisp.dhis.system.notification.Notifier;
 import org.hisp.dhis.system.util.GeoUtils;
 import org.hisp.dhis.trackedentity.TrackedEntityAttribute;
@@ -671,15 +671,17 @@ public abstract class AbstractTrackedEntityInstanceService implements TrackedEnt
       return importSummary;
     }
 
-    List<String> errors = trackerAccessManager.canWrite(importOptions.getUser(), daoEntityInstance);
+    List<String> errors =
+        trackerAccessManager.canCreate(importOptions.getUser(), daoEntityInstance);
 
     if (!errors.isEmpty()) {
       return new ImportSummary(ImportStatus.ERROR, errors.toString()).incrementIgnored();
     }
 
-    teiService.addTrackedEntityInstance(daoEntityInstance);
-
-    addAttributeValues(dtoEntityInstance, daoEntityInstance, importOptions.getUser());
+    if (!importOptions.isDryRun()) {
+      teiService.addTrackedEntityInstance(daoEntityInstance);
+      addAttributeValues(dtoEntityInstance, daoEntityInstance, importOptions.getUser());
+    }
 
     importSummary.setReference(daoEntityInstance.getUid());
     importSummary.getImportCount().incrementImported();
@@ -825,13 +827,17 @@ public abstract class AbstractTrackedEntityInstanceService implements TrackedEnt
       daoEntityInstance.setGeometry(null);
     }
 
-    if (!importOptions.isIgnoreEmptyCollection() || !dtoEntityInstance.getAttributes().isEmpty()) {
+    if (!importOptions.isDryRun()
+        && (!importOptions.isIgnoreEmptyCollection()
+            || !dtoEntityInstance.getAttributes().isEmpty())) {
       updateAttributeValues(dtoEntityInstance, daoEntityInstance, program, importOptions.getUser());
     }
 
     updateDateFields(dtoEntityInstance, daoEntityInstance);
 
-    teiService.updateTrackedEntityInstance(daoEntityInstance);
+    if (!importOptions.isDryRun()) {
+      teiService.updateTrackedEntityInstance(daoEntityInstance);
+    }
 
     importSummary.setReference(daoEntityInstance.getUid());
     importSummary.getImportCount().incrementUpdated();
@@ -902,8 +908,9 @@ public abstract class AbstractTrackedEntityInstanceService implements TrackedEnt
       }
 
       daoEntityInstance.setLastUpdatedByUserInfo(UserInfoSnapshot.from(importOptions.getUser()));
-      teiService.deleteTrackedEntityInstance(daoEntityInstance);
-
+      if (!importOptions.isDryRun()) {
+        teiService.deleteTrackedEntityInstance(daoEntityInstance);
+      }
       importSummary.setStatus(ImportStatus.SUCCESS);
       importSummary.setDescription(
           "Deletion of tracked entity instance " + uid + " was successful");

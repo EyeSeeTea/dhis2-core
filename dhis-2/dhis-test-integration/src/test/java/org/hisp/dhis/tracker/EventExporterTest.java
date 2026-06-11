@@ -27,6 +27,7 @@
  */
 package org.hisp.dhis.tracker;
 
+import static org.hisp.dhis.common.OrganisationUnitSelectionMode.ACCESSIBLE;
 import static org.hisp.dhis.common.OrganisationUnitSelectionMode.SELECTED;
 import static org.hisp.dhis.tracker.Assertions.assertHasTimeStamp;
 import static org.hisp.dhis.tracker.Assertions.assertNoErrors;
@@ -48,6 +49,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
@@ -65,6 +67,7 @@ import org.hisp.dhis.common.QueryOperator;
 import org.hisp.dhis.common.ValueType;
 import org.hisp.dhis.dataelement.DataElement;
 import org.hisp.dhis.dataelement.DataElementService;
+import org.hisp.dhis.dxf2.events.EventParams;
 import org.hisp.dhis.dxf2.events.event.Event;
 import org.hisp.dhis.dxf2.events.event.EventQueryParams;
 import org.hisp.dhis.dxf2.events.event.EventService;
@@ -74,12 +77,16 @@ import org.hisp.dhis.dxf2.events.trackedentity.Relationship;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.program.Program;
 import org.hisp.dhis.program.ProgramStage;
+import org.hisp.dhis.program.ProgramStageInstance;
+import org.hisp.dhis.program.ProgramStageInstanceService;
 import org.hisp.dhis.program.ProgramStatus;
 import org.hisp.dhis.program.ProgramType;
-import org.hisp.dhis.program.UserInfoSnapshot;
+import org.hisp.dhis.relationship.RelationshipService;
 import org.hisp.dhis.trackedentity.TrackedEntityAttribute;
 import org.hisp.dhis.trackedentity.TrackedEntityInstance;
+import org.hisp.dhis.trackedentitycomment.TrackedEntityComment;
 import org.hisp.dhis.user.User;
+import org.hisp.dhis.util.DateUtils;
 import org.hisp.dhis.webapi.controller.event.mapper.OrderParam;
 import org.hisp.dhis.webapi.controller.event.mapper.SortDirection;
 import org.junit.jupiter.api.BeforeEach;
@@ -103,6 +110,10 @@ class EventExporterTest extends TrackerTest {
 
   @Autowired private DataElementService dataElementService;
 
+  @Autowired private ProgramStageInstanceService programStageInstanceService;
+
+  @Autowired private RelationshipService relationshipService;
+
   private OrganisationUnit orgUnit;
 
   private ProgramStage programStage;
@@ -110,14 +121,14 @@ class EventExporterTest extends TrackerTest {
   private Program program;
 
   final Function<EventQueryParams, List<String>> eventsFunction =
-      (params) ->
+      params ->
           eventService.getEvents(params).getEvents().stream()
               .map(Event::getEvent)
               .collect(Collectors.toList());
 
   /** EVENT_ID is at position 0 in column headers in events grid */
   final Function<EventQueryParams, List<String>> eventsGridFunction =
-      (params) ->
+      params ->
           eventService.getEventsGrid(params).getRows().stream()
               .map(r -> r.get(0).toString())
               .collect(Collectors.toList());
@@ -135,7 +146,6 @@ class EventExporterTest extends TrackerTest {
             fromJson("tracker/event_and_enrollment.json", importUser.getUid())));
     orgUnit = get(OrganisationUnit.class, "h4w96yEMlzO");
     programStage = get(ProgramStage.class, "NpsdDv6kKSO");
-    ProgramStage programStage1 = get(ProgramStage.class, "qLZC0lvvxQH");
     program = programStage.getProgram();
     trackedEntityInstance = get(TrackedEntityInstance.class, "dUE514NMOlo");
 
@@ -176,7 +186,43 @@ class EventExporterTest extends TrackerTest {
   }
 
   @Test
+  void shouldReturnEventWithRelationships() {
+    // Clearing sessionFactory so that hibernate entities are refreshed from DB (after import)
+    manager.clear();
+
+    Event event =
+        eventService.getEvent(
+            programStageInstanceService.getProgramStageInstance("pTzf9KYMk72"), EventParams.TRUE);
+
+    assertEquals("pTzf9KYMk72", event.getEvent());
+    List<String> relationships =
+        event.getRelationships().stream()
+            .map(Relationship::getRelationship)
+            .collect(Collectors.toList());
+    assertContainsOnly(List.of("oLT07jKRu9e", "yZxjxJli9mO"), relationships);
+  }
+
+  @Test
+  void shouldNotReturnDeletedRelationshipInEvent() {
+    // Clearing sessionFactory so that hibernate entities are refreshed from DB (after import)
+    manager.clear();
+    relationshipService.deleteRelationship(relationshipService.getRelationship("yZxjxJli9mO"));
+
+    Event event =
+        eventService.getEvent(
+            programStageInstanceService.getProgramStageInstance("pTzf9KYMk72"), EventParams.TRUE);
+
+    assertEquals("pTzf9KYMk72", event.getEvent());
+    List<String> relationships =
+        event.getRelationships().stream()
+            .map(Relationship::getRelationship)
+            .collect(Collectors.toList());
+    assertContainsOnly(List.of("oLT07jKRu9e"), relationships);
+  }
+
+  @Test
   void shouldReturnEventsWithNotes() {
+    ProgramStageInstance pTzf9KYMk72 = get(ProgramStageInstance.class, "pTzf9KYMk72");
     EventQueryParams params = new EventQueryParams();
     params.setOrgUnit(orgUnit);
     params.setEvents(Set.of("pTzf9KYMk72"));
@@ -185,13 +231,7 @@ class EventExporterTest extends TrackerTest {
     Events events = eventService.getEvents(params);
 
     assertContainsOnly(List.of("pTzf9KYMk72"), eventUids(events));
-    List<Note> notes = events.getEvents().get(0).getNotes();
-    assertContainsOnly(
-        List.of("SGuCABkhpgn", "DRKO4xUVrpr"),
-        notes.stream().map(Note::getNote).collect(Collectors.toList()));
-    assertAll(
-        () -> assertNote(importUser, "comment value", notes.get(0)),
-        () -> assertNote(importUser, "comment value", notes.get(1)));
+    assertNotes(pTzf9KYMk72.getComments(), events.getEvents().get(0).getNotes());
   }
 
   @ParameterizedTest
@@ -948,6 +988,37 @@ class EventExporterTest extends TrackerTest {
   }
 
   @Test
+  void testEnrollmentFilterTextAttributesUsingIn() {
+    EventQueryParams params = new EventQueryParams();
+    params.setOrgUnitSelectionMode(SELECTED);
+    params.setOrgUnit(orgUnit);
+    params.addFilterAttributes(
+        List.of(queryItem("toUpdate000", QueryOperator.IN, "Rainy day;summer Day")));
+
+    List<String> trackedEntities =
+        eventService.getEvents(params).getEvents().stream()
+            .map(Event::getTrackedEntityInstance)
+            .collect(Collectors.toList());
+
+    assertContainsOnly(Set.of("dUE514NMOlo", "QS6w44flWAf"), trackedEntities);
+  }
+
+  @Test
+  void testEnrollmentFilterNumericAttributesUsingIn() {
+    EventQueryParams params = new EventQueryParams();
+    params.setOrgUnitSelectionMode(SELECTED);
+    params.setOrgUnit(orgUnit);
+    params.addFilterAttributes(List.of(queryItem("numericAttr", QueryOperator.IN, "70;88")));
+
+    List<String> trackedEntities =
+        eventService.getEvents(params).getEvents().stream()
+            .map(Event::getTrackedEntityInstance)
+            .collect(Collectors.toList());
+
+    assertContainsOnly(Set.of("dUE514NMOlo", "QS6w44flWAf"), trackedEntities);
+  }
+
+  @Test
   void testEnrollmentFilterAttributes() {
     EventQueryParams params = new EventQueryParams();
     params.setOrgUnitSelectionMode(SELECTED);
@@ -964,6 +1035,51 @@ class EventExporterTest extends TrackerTest {
   }
 
   @Test
+  void shouldExportEventsWhenFilteringByTextAttributesUsingSW() {
+    EventQueryParams params = new EventQueryParams();
+    params.setOrgUnitSelectionMode(ACCESSIBLE);
+    params.addFilterAttributes(
+        List.of(queryItem("notUpdated0", QueryOperator.SW, "20% \\Winter'")));
+
+    List<String> events =
+        eventService.getEvents(params).getEvents().stream()
+            .map(Event::getUid)
+            .collect(Collectors.toList());
+
+    assertContainsOnly(List.of("D9PbzJY8bJM"), events);
+  }
+
+  @Test
+  void shouldExportEventsWhenFilteringByTextAttributesUsingEW() {
+    EventQueryParams params = new EventQueryParams();
+    params.setOrgUnitSelectionMode(ACCESSIBLE);
+    params.addFilterAttributes(
+        List.of(queryItem("notUpdated0", QueryOperator.EW, "% \\Winter's day")));
+
+    List<String> events =
+        eventService.getEvents(params).getEvents().stream()
+            .map(Event::getUid)
+            .collect(Collectors.toList());
+
+    assertContainsOnly(List.of("D9PbzJY8bJM"), events);
+  }
+
+  @Test
+  void shouldExportEventsWhenFilteringByTextAttributesUsingLike() {
+    EventQueryParams params = new EventQueryParams();
+    params.setOrgUnitSelectionMode(ACCESSIBLE);
+    params.addFilterAttributes(
+        List.of(queryItem("notUpdated0", QueryOperator.LIKE, "0% \\Winter's")));
+
+    List<String> events =
+        eventService.getEvents(params).getEvents().stream()
+            .map(Event::getUid)
+            .collect(Collectors.toList());
+
+    assertContainsOnly(List.of("D9PbzJY8bJM"), events);
+  }
+
+  @Test
   void testEnrollmentFilterAttributesWithMultipleFiltersOnDifferentAttributes() {
     EventQueryParams params = new EventQueryParams();
     params.setOrgUnitSelectionMode(SELECTED);
@@ -972,7 +1088,7 @@ class EventExporterTest extends TrackerTest {
     params.addFilterAttributes(
         List.of(
             queryItem("toUpdate000", QueryOperator.EQ, "rainy day"),
-            queryItem("notUpdated0", QueryOperator.EQ, "winter day")));
+            queryItem("notUpdated0", QueryOperator.EQ, "20% \\winter's day")));
 
     List<String> trackedEntities =
         eventService.getEvents(params).getEvents().stream()
@@ -1149,11 +1265,47 @@ class EventExporterTest extends TrackerTest {
         new HashSet<>(trackedEntities));
   }
 
-  private void assertNote(User expectedLastUpdatedBy, String expectedNote, Note actual) {
-    assertEquals(expectedNote, actual.getValue());
-    UserInfoSnapshot lastUpdatedBy = actual.getLastUpdatedBy();
-    assertEquals(expectedLastUpdatedBy.getUid(), lastUpdatedBy.getUid());
-    assertEquals(expectedLastUpdatedBy.getUsername(), lastUpdatedBy.getUsername());
+  private static void assertNotes(List<TrackedEntityComment> expected, List<Note> actual) {
+    Map<String, TrackedEntityComment> expectedNotes =
+        expected.stream()
+            .collect(Collectors.toMap(IdentifiableObject::getUid, Function.identity()));
+    Map<String, Note> actualNotes =
+        actual.stream().collect(Collectors.toMap(Note::getNote, Function.identity()));
+    List<Executable> assertions =
+        expectedNotes.entrySet().stream()
+            .map(
+                entry ->
+                    (Executable)
+                        () -> {
+                          TrackedEntityComment expectedNote = entry.getValue();
+                          Note actualNote = actualNotes.get(entry.getKey());
+                          assertNotNull(
+                              actualNote, "note " + expectedNote.getUid() + " does not exist");
+                          assertAll(
+                              "note assertions " + expectedNote.getUid(),
+                              () ->
+                                  assertEquals(
+                                      expectedNote.getCommentText(),
+                                      actualNote.getValue(),
+                                      "commentText"),
+                              () ->
+                                  assertEquals(
+                                      expectedNote.getCreator(),
+                                      actualNote.getStoredBy(),
+                                      "creator"),
+                              () ->
+                                  assertEquals(
+                                      DateUtils.getIso8601NoTz(expectedNote.getCreated()),
+                                      actualNote.getStoredDate(),
+                                      "created"),
+                              () ->
+                                  assertEquals(
+                                      expectedNote.getLastUpdated(),
+                                      actualNote.getLastUpdated(),
+                                      "lastUpdated"));
+                        })
+            .collect(Collectors.toList());
+    assertAll("note assertions", assertions);
   }
 
   private DataElement dataElement(String uid) {

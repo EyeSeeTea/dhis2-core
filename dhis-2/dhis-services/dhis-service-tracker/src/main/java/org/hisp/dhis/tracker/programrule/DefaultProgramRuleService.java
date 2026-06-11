@@ -34,12 +34,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.collections4.ListUtils;
+import org.hisp.dhis.dxf2.events.event.EventQueryParams;
+import org.hisp.dhis.dxf2.events.event.EventService;
 import org.hisp.dhis.program.Program;
 import org.hisp.dhis.program.ProgramInstance;
 import org.hisp.dhis.program.ProgramStageInstance;
+import org.hisp.dhis.program.ProgramStageInstanceService;
 import org.hisp.dhis.programrule.engine.ProgramRuleEngine;
 import org.hisp.dhis.rules.models.RuleEffects;
 import org.hisp.dhis.trackedentity.TrackedEntityInstance;
@@ -77,6 +79,10 @@ class DefaultProgramRuleService implements ProgramRuleService {
 
   private final RuleActionEventMapper ruleActionEventMapper;
 
+  private final EventService eventService;
+
+  private final ProgramStageInstanceService programStageInstanceService;
+
   @Override
   @Transactional(readOnly = true)
   public void calculateRuleEffects(TrackerBundle bundle, TrackerPreheat preheat) {
@@ -105,7 +111,7 @@ class DefaultProgramRuleService implements ProgramRuleService {
                   enrollmentTrackerConverterService.fromForRuleEngine(preheat, e);
 
               return programRuleEngine
-                  .evaluateEnrollmentAndEvents(
+                  .evaluateEnrollmentAndTrackerEvents(
                       programInstance,
                       getEventsFromEnrollment(programInstance.getUid(), bundle, preheat),
                       getAttributes(e.getEnrollment(), e.getTrackedEntity(), bundle, preheat))
@@ -127,7 +133,7 @@ class DefaultProgramRuleService implements ProgramRuleService {
         .flatMap(
             enrollment ->
                 programRuleEngine
-                    .evaluateEnrollmentAndEvents(
+                    .evaluateEnrollmentAndTrackerEvents(
                         enrollment,
                         getEventsFromEnrollment(enrollment.getUid(), bundle, preheat),
                         getAttributes(
@@ -200,16 +206,34 @@ class DefaultProgramRuleService implements ProgramRuleService {
   // if they are present in both places
   private Set<ProgramStageInstance> getEventsFromEnrollment(
       String enrollmentUid, TrackerBundle bundle, TrackerPreheat preheat) {
-    Stream<ProgramStageInstance> programStageInstances =
-        preheat.getEvents().values().stream()
-            .filter(e -> e.getProgramInstance().getUid().equals(enrollmentUid))
-            .filter(e -> bundle.findEventByUid(e.getUid()).isEmpty());
 
-    Stream<ProgramStageInstance> bundleEvents =
+    // Fetch events linked to the enrollment from the database
+    EventQueryParams eventQueryParams = new EventQueryParams();
+    eventQueryParams.setProgramInstances(Set.of(enrollmentUid));
+    List<org.hisp.dhis.dxf2.events.event.Event> dbEvents =
+        eventService.getEvents(eventQueryParams).getEvents();
+
+    // Convert DB events to ProgramStageInstances
+    Map<String, ProgramStageInstance> dbProgramStageInstances =
+        dbEvents.stream()
+            .collect(
+                Collectors.toMap(
+                    org.hisp.dhis.dxf2.events.event.Event::getUid,
+                    e -> programStageInstanceService.getProgramStageInstance(e.getUid())));
+
+    // Fetch events from the payload for the given enrollment
+    Map<String, ProgramStageInstance> payloadProgramStageInstances =
         bundle.getEvents().stream()
-            .filter(e -> e.getEnrollment().equals(enrollmentUid))
-            .map(event -> eventTrackerConverterService.fromForRuleEngine(preheat, event));
+            .filter(event -> event.getEnrollment().equals(enrollmentUid))
+            .collect(
+                Collectors.toMap(
+                    Event::getUid,
+                    event -> eventTrackerConverterService.fromForRuleEngine(preheat, event)));
 
-    return Stream.concat(programStageInstances, bundleEvents).collect(Collectors.toSet());
+    // Merge payload events (prioritized) with DB events
+    dbProgramStageInstances.putAll(payloadProgramStageInstances);
+
+    // Return a Set of unique ProgramStageInstances
+    return new HashSet<>(dbProgramStageInstances.values());
   }
 }

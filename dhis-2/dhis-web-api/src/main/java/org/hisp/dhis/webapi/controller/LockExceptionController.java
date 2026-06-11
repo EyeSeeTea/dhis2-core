@@ -51,11 +51,11 @@ import org.hisp.dhis.dxf2.webmessage.WebMessageException;
 import org.hisp.dhis.feedback.ForbiddenException;
 import org.hisp.dhis.fieldfilter.FieldFilterParams;
 import org.hisp.dhis.fieldfilter.FieldFilterService;
+import org.hisp.dhis.fieldfiltering.Preset;
 import org.hisp.dhis.hibernate.exception.ReadAccessDeniedException;
 import org.hisp.dhis.i18n.I18nFormat;
 import org.hisp.dhis.i18n.I18nManager;
 import org.hisp.dhis.node.NodeUtils;
-import org.hisp.dhis.node.Preset;
 import org.hisp.dhis.node.types.RootNode;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.organisationunit.OrganisationUnitService;
@@ -307,6 +307,6 @@ public class LockExceptionController extends AbstractGistReadOnlyController<Lock
   private boolean canCapture(OrganisationUnit captureTarget) {
     return currentUserService.currentUserIsSuper()
         || currentUserService.getCurrentUserOrganisationUnits().stream()
-            .anyMatch(ou -> captureTarget.getPath().startsWith(ou.getPath()));
+            .anyMatch(ou -> captureTarget.getPath().startsWith(ou.getStoredPath()));
   }
 }

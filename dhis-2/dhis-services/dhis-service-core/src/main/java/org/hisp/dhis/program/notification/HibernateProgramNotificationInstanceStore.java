@@ -27,7 +27,13 @@
  */
 package org.hisp.dhis.program.notification;
 
+import static org.hisp.dhis.program.notification.BaseNotificationParam.DEFAULT_PAGE;
+import static org.hisp.dhis.program.notification.BaseNotificationParam.DEFAULT_PAGE_SIZE;
+
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.function.Function;
 import javax.persistence.criteria.CriteriaBuilder;
@@ -76,15 +82,11 @@ public class HibernateProgramNotificationInstanceStore
             .addOrder(root -> builder.desc(root.get("created")));
 
     if (!params.isSkipPaging()) {
-      jpaParameters
-          .setFirstResult(
-              params.getPage() != null
-                  ? params.getPage()
-                  : ProgramNotificationInstanceParam.DEFAULT_PAGE)
-          .setMaxResults(
-              params.getPageSize() != null
-                  ? params.getPageSize()
-                  : ProgramNotificationInstanceParam.DEFAULT_PAGE_SIZE);
+      int page = params.getPage() != null ? params.getPage() : DEFAULT_PAGE;
+      int pageSize = params.getPageSize() != null ? params.getPageSize() : DEFAULT_PAGE_SIZE;
+
+      jpaParameters.setFirstResult((page - 1) * pageSize);
+      jpaParameters.setMaxResults(pageSize);
     }
 
     return getList(builder, jpaParameters);
@@ -118,7 +120,18 @@ public class HibernateProgramNotificationInstanceStore
     }
 
     if (params.hasScheduledAt()) {
-      predicates.add(root -> builder.equal(root.get("scheduledAt"), params.getScheduledAt()));
+      Date scheduledAt = params.getScheduledAt();
+
+      LocalDate date = scheduledAt.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+
+      Date startOfDay = Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant());
+
+      Date startOfNextDay =
+          Date.from(date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+
+      predicates.add(root -> builder.greaterThanOrEqualTo(root.get("scheduledAt"), startOfDay));
+
+      predicates.add(root -> builder.lessThan(root.get("scheduledAt"), startOfNextDay));
     }
 
     return predicates;

@@ -38,8 +38,13 @@ import static org.hisp.dhis.expression.ExpressionService.SYMBOL_WILDCARD;
 import static org.hisp.dhis.organisationunit.OrganisationUnit.KEY_LEVEL;
 import static org.hisp.dhis.organisationunit.OrganisationUnit.KEY_USER_ORGUNIT;
 import static org.hisp.dhis.period.RelativePeriodEnum.LAST_12_MONTHS;
+import static org.hisp.dhis.period.RelativePeriodEnum.LAST_3_DAYS;
+import static org.hisp.dhis.period.RelativePeriodEnum.LAST_5_YEARS;
+import static org.hisp.dhis.period.RelativePeriodEnum.LAST_6_MONTHS;
+import static org.hisp.dhis.period.RelativePeriodEnum.THIS_WEEK;
 import static org.hisp.dhis.utils.Assertions.assertMapEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -478,6 +483,7 @@ class DimensionServiceTest extends TransactionalIntegrationTest {
         eventVisualization.getDataElementDimensions().get(0);
     assertEquals(deC, teDeDim.getDataElement());
     assertEquals(psA, teDeDim.getProgramStage());
+    assertEquals(2, eventVisualization.getRawPeriods().size());
   }
 
   @Test
@@ -631,6 +637,7 @@ class DimensionServiceTest extends TransactionalIntegrationTest {
     assertEquals(0, visualization.getPeriods().size());
     assertTrue(visualization.getRelatives().isLast12Months());
     assertEquals(5, visualization.getOrganisationUnits().size());
+    assertEquals(LAST_12_MONTHS.name(), visualization.getRawPeriods().get(0));
   }
 
   @Test
@@ -665,6 +672,7 @@ class DimensionServiceTest extends TransactionalIntegrationTest {
     assertEquals(0, eventVisualization.getPeriods().size());
     assertTrue(eventVisualization.getRelatives().isLast12Months());
     assertEquals(5, eventVisualization.getOrganisationUnits().size());
+    assertEquals(LAST_12_MONTHS.name(), eventVisualization.getRawPeriods().get(0));
   }
 
   @Test
@@ -744,6 +752,51 @@ class DimensionServiceTest extends TransactionalIntegrationTest {
     assertEquals(2, visualization.getPeriods().size());
     assertEquals(1, visualization.getDataElementGroupSetDimensions().size());
     assertEquals(3, visualization.getDataElementGroupSetDimensions().get(0).getItems().size());
+    assertEquals(2, visualization.getRawPeriods().size());
+  }
+
+  @Test
+  void testMergeAnalyticalEventObjectWithMultiRelativePeriods() {
+    // Given
+    DimensionalItemObject peLast6Months = new BaseDimensionalItemObject(LAST_6_MONTHS.toString());
+    DimensionalItemObject peLast3days = new BaseDimensionalItemObject(LAST_3_DAYS.toString());
+    DimensionalItemObject peLast5Years = new BaseDimensionalItemObject(LAST_5_YEARS.toString());
+    DimensionalItemObject peThisWeek = new BaseDimensionalItemObject(THIS_WEEK.toString());
+    EventVisualization eventVisualization = new EventVisualization("any");
+    eventVisualization
+        .getColumns()
+        .add(
+            new BaseDimensionalObject(
+                DimensionalObject.DATA_X_DIM_ID, DimensionType.DATA_X, Lists.newArrayList(deA)));
+    eventVisualization
+        .getRows()
+        .add(
+            new BaseDimensionalObject(
+                DimensionalObject.ORGUNIT_DIM_ID,
+                DimensionType.ORGANISATION_UNIT,
+                Lists.newArrayList(ouA)));
+    eventVisualization
+        .getFilters()
+        .add(
+            new BaseDimensionalObject(
+                DimensionalObject.PERIOD_DIM_ID,
+                DimensionType.PERIOD,
+                Lists.newArrayList(peLast6Months, peLast5Years, peLast3days, peThisWeek)));
+    // When
+    dimensionService.mergeAnalyticalObject(eventVisualization);
+    // Then
+    assertEquals(1, eventVisualization.getDataDimensionItems().size());
+    assertEquals(1, eventVisualization.getOrganisationUnits().size());
+    assertEquals(0, eventVisualization.getPeriods().size());
+    assertFalse(eventVisualization.getRelatives().isLast12Months());
+    assertTrue(eventVisualization.getRelatives().isLast6Months());
+    assertTrue(eventVisualization.getRelatives().isLast5Years());
+    assertTrue(eventVisualization.getRelatives().isLast3Days());
+    assertTrue(eventVisualization.getRelatives().isThisWeek());
+    assertEquals(LAST_6_MONTHS.name(), eventVisualization.getRawPeriods().get(0));
+    assertEquals(LAST_5_YEARS.name(), eventVisualization.getRawPeriods().get(1));
+    assertEquals(LAST_3_DAYS.name(), eventVisualization.getRawPeriods().get(2));
+    assertEquals(THIS_WEEK.name(), eventVisualization.getRawPeriods().get(3));
   }
 
   @Test
@@ -772,6 +825,57 @@ class DimensionServiceTest extends TransactionalIntegrationTest {
     assertEquals(2, eventVisualization.getPeriods().size());
     assertEquals(1, eventVisualization.getDataElementGroupSetDimensions().size());
     assertEquals(3, eventVisualization.getDataElementGroupSetDimensions().get(0).getItems().size());
+  }
+
+  @Test
+  void testMergeAnalyticalEventObjectWithMultiRelativeAndNonRelativePeriods() {
+    // Given
+    DimensionalItemObject peLast6Months = new BaseDimensionalItemObject(LAST_6_MONTHS.toString());
+    DimensionalItemObject peLast3days = new BaseDimensionalItemObject(LAST_3_DAYS.toString());
+    DimensionalItemObject peLast5Years = new BaseDimensionalItemObject(LAST_5_YEARS.toString());
+    DimensionalItemObject peThisWeek = new BaseDimensionalItemObject(THIS_WEEK.toString());
+
+    EventVisualization eventVisualization = new EventVisualization("any");
+    eventVisualization
+        .getColumns()
+        .add(
+            new BaseDimensionalObject(
+                DimensionalObject.DATA_X_DIM_ID, DimensionType.DATA_X, Lists.newArrayList(deA)));
+    eventVisualization
+        .getRows()
+        .add(
+            new BaseDimensionalObject(
+                DimensionalObject.ORGUNIT_DIM_ID,
+                DimensionType.ORGANISATION_UNIT,
+                Lists.newArrayList(ouA)));
+    eventVisualization
+        .getFilters()
+        .add(
+            new BaseDimensionalObject(
+                DimensionalObject.PERIOD_DIM_ID,
+                DimensionType.PERIOD,
+                Lists.newArrayList(
+                    peLast6Months, peLast5Years, peLast3days, peThisWeek, peA, peB)));
+
+    // When
+    dimensionService.mergeAnalyticalObject(eventVisualization);
+
+    // Then
+    assertEquals(1, eventVisualization.getDataDimensionItems().size());
+    assertEquals(1, eventVisualization.getOrganisationUnits().size());
+    assertEquals(2, eventVisualization.getPeriods().size());
+    assertFalse(eventVisualization.getRelatives().isLast12Months());
+    assertTrue(eventVisualization.getRelatives().isLast6Months());
+    assertTrue(eventVisualization.getRelatives().isLast5Years());
+    assertTrue(eventVisualization.getRelatives().isLast3Days());
+    assertTrue(eventVisualization.getRelatives().isThisWeek());
+    assertEquals(6, eventVisualization.getRawPeriods().size());
+    assertEquals(LAST_6_MONTHS.name(), eventVisualization.getRawPeriods().get(0));
+    assertEquals(LAST_5_YEARS.name(), eventVisualization.getRawPeriods().get(1));
+    assertEquals(LAST_3_DAYS.name(), eventVisualization.getRawPeriods().get(2));
+    assertEquals(THIS_WEEK.name(), eventVisualization.getRawPeriods().get(3));
+    assertEquals("201201", eventVisualization.getRawPeriods().get(4));
+    assertEquals("201202", eventVisualization.getRawPeriods().get(5));
   }
 
   @Test

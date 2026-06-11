@@ -49,7 +49,6 @@ import java.io.InputStream;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
 import javax.imageio.ImageIO;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -72,7 +71,10 @@ import org.hisp.dhis.dxf2.importsummary.ImportSummaries;
 import org.hisp.dhis.dxf2.importsummary.ImportSummary;
 import org.hisp.dhis.dxf2.webmessage.WebMessage;
 import org.hisp.dhis.dxf2.webmessage.WebMessageException;
+import org.hisp.dhis.external.conf.ConfigurationKey;
+import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.feedback.BadRequestException;
+import org.hisp.dhis.feedback.NotFoundException;
 import org.hisp.dhis.fieldfilter.FieldFilterParams;
 import org.hisp.dhis.fieldfilter.FieldFilterService;
 import org.hisp.dhis.fileresource.FileResource;
@@ -100,6 +102,7 @@ import org.hisp.dhis.webapi.strategy.old.tracker.imports.TrackedEntityInstanceSt
 import org.hisp.dhis.webapi.strategy.old.tracker.imports.request.TrackerEntityInstanceRequest;
 import org.hisp.dhis.webapi.utils.ContextUtils;
 import org.hisp.dhis.webapi.utils.FileResourceUtils;
+import org.hisp.dhis.webapi.utils.HeaderUtils;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -127,6 +130,10 @@ import org.springframework.web.bind.annotation.ResponseBody;
 @ApiVersion({DhisApiVersion.DEFAULT, DhisApiVersion.ALL})
 @RequiredArgsConstructor
 public class TrackedEntityInstanceController {
+  private static final String FILE_CONTENT_DISPOSITION = "attachment; filename=";
+
+  private static final String IMAGE_CONTENT_DISPOSITION = "filename=";
+
   private final TrackedEntityInstanceService trackedEntityInstanceService;
 
   private final org.hisp.dhis.trackedentity.TrackedEntityInstanceService instanceService;
@@ -148,6 +155,8 @@ public class TrackedEntityInstanceController {
   private final TrackedEntityInstanceCriteriaMapper criteriaMapper;
 
   private final TrackedEntityInstanceStrategyHandler trackedEntityInstanceStrategyHandler;
+
+  private final DhisConfigurationProvider config;
 
   // -------------------------------------------------------------------------
   // READ
@@ -197,34 +206,22 @@ public class TrackedEntityInstanceController {
   public void getAttributeImage(
       @PathVariable("teiId") String teiId,
       @PathVariable("attributeId") String attributeId,
+      @RequestParam(required = false) String programId,
       @RequestParam(required = false) Integer width,
       @RequestParam(required = false) Integer height,
       @RequestParam(required = false) ImageFileDimension dimension,
       HttpServletResponse response)
       throws WebMessageException {
-    User user = currentUserService.getCurrentUser();
-
-    org.hisp.dhis.trackedentity.TrackedEntityInstance trackedEntityInstance =
-        instanceService.getTrackedEntityInstance(teiId);
-
-    List<String> trackerAccessErrors = trackerAccessManager.canRead(user, trackedEntityInstance);
-
-    List<TrackedEntityAttributeValue> attributes =
-        trackedEntityInstance.getTrackedEntityAttributeValues().stream()
-            .filter(val -> val.getAttribute().getUid().equals(attributeId))
-            .collect(Collectors.toList());
-
-    if (!trackerAccessErrors.isEmpty()) {
-      throw new WebMessageException(
-          unauthorized(
-              "You're not authorized to access the TrackedEntityInstance with id: " + teiId));
+    TrackedEntityAttributeValue value;
+    try {
+      value =
+          trackedEntityInstanceSupportService.getTrackedEntityAttributeValue(
+              teiId, attributeId, programId);
+    } catch (NotFoundException e) {
+      throw new WebMessageException(notFound(e.getMessage()));
+    } catch (IllegalAccessException e) {
+      throw new WebMessageException(unauthorized(e.getMessage()));
     }
-
-    if (attributes.isEmpty()) {
-      throw new WebMessageException(notFound("Attribute not found for ID " + attributeId));
-    }
-
-    TrackedEntityAttributeValue value = attributes.get(0);
 
     if (value == null) {
       throw new WebMessageException(notFound("Value not found for ID " + attributeId));
@@ -249,7 +246,7 @@ public class TrackedEntityInstanceController {
     FileResourceUtils.setImageFileDimensions(
         fileResource, MoreObjects.firstNonNull(dimension, ImageFileDimension.ORIGINAL));
 
-    setHttpResponse(response, fileResource);
+    setImageHttpResponse(response, fileResource);
 
     try (InputStream inputStream = fileResourceService.getFileResourceContent(fileResource)) {
       BufferedImage img = ImageIO.read(inputStream);
@@ -314,7 +311,7 @@ public class TrackedEntityInstanceController {
 
     validateFileResource(fileResource, value);
 
-    setHttpResponse(response, fileResource);
+    setFileHttpResponse(response, fileResource);
 
     try {
       fileResourceService.copyFileResourceContent(fileResource, response.getOutputStream());
@@ -453,7 +450,7 @@ public class TrackedEntityInstanceController {
           .setLocation(
               singleSummary == null
                   ? null
-                  : "/api/" + "trackedEntityInstances" + "/" + singleSummary.getReference());
+                  : "/trackedEntityInstances/" + singleSummary.getReference());
     }
     return jobConfigurationReport(jobId).setLocation("/system/tasks/" + TEI_IMPORT);
   }
@@ -596,9 +593,20 @@ public class TrackedEntityInstanceController {
     }
   }
 
-  private void setHttpResponse(HttpServletResponse response, FileResource fileResource) {
+  private void setFileHttpResponse(HttpServletResponse response, FileResource fileResource) {
+    setHttpResponse(response, fileResource, FILE_CONTENT_DISPOSITION);
+  }
+
+  private void setImageHttpResponse(HttpServletResponse response, FileResource fileResource) {
+    setHttpResponse(response, fileResource, IMAGE_CONTENT_DISPOSITION);
+  }
+
+  private void setHttpResponse(
+      HttpServletResponse response, FileResource fileResource, String contentDisposition) {
     response.setContentType(fileResource.getContentType());
     response.setContentLengthLong(fileResource.getContentLength());
-    response.setHeader(HttpHeaders.CONTENT_DISPOSITION, "filename=" + fileResource.getName());
+    response.setHeader(
+        HttpHeaders.CONTENT_DISPOSITION, contentDisposition + fileResource.getName());
+    HeaderUtils.setSecurityHeaders(response, config.getProperty(ConfigurationKey.CSP_HEADER_VALUE));
   }
 }

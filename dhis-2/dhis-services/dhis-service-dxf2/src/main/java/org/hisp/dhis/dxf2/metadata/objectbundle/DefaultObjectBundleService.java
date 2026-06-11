@@ -64,7 +64,6 @@ import org.hisp.dhis.schema.SchemaService;
 import org.hisp.dhis.system.deletion.DeletionManager;
 import org.hisp.dhis.system.notification.Notifier;
 import org.hisp.dhis.user.CurrentUserService;
-import org.hisp.dhis.user.User;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -154,11 +153,12 @@ public class DefaultObjectBundleService implements ObjectBundleService {
   private <T extends IdentifiableObject> void commitObjectType(
       ObjectBundle bundle, Map<Class<?>, TypeReport> typeReports, Session session, Class<T> klass) {
     List<T> nonPersistedObjects = bundle.getObjects(klass, false);
-    List<T> persistedObjects = bundle.getObjects(klass, true);
 
     List<ObjectBundleHook<? super T>> importHooks = objectBundleHooks.getTypeImportHooks(klass);
     importHooks.forEach(hook -> hook.preTypeImport(klass, nonPersistedObjects, bundle));
 
+    // get persisted objects here as they may have been updated in a previous hook
+    List<T> persistedObjects = bundle.getObjects(klass, true);
     if (bundle.getImportMode().isCreateAndUpdate()) {
       TypeReport typeReport = new TypeReport(klass);
       typeReport.merge(handleCreates(session, klass, nonPersistedObjects, bundle));
@@ -222,14 +222,6 @@ public class DefaultObjectBundleService implements ObjectBundleService {
       typeReport.addObjectReport(objectReport);
 
       preheatService.connectReferences(object, bundle.getPreheat(), bundle.getPreheatIdentifier());
-
-      if (bundle.getOverrideUser() != null) {
-        object.setCreatedBy(bundle.getOverrideUser());
-
-        if (object instanceof User) {
-          (object).setCreatedBy(bundle.getOverrideUser());
-        }
-      }
 
       session.save(object);
 
@@ -309,14 +301,6 @@ public class DefaultObjectBundleService implements ObjectBundleService {
                 .setMergeMode(bundle.getMergeMode())
                 .setSkipSharing(bundle.isSkipSharing())
                 .setSkipTranslation(bundle.isSkipTranslation()));
-      }
-
-      if (bundle.getOverrideUser() != null) {
-        persistedObject.setCreatedBy(bundle.getOverrideUser());
-
-        if (object instanceof User) {
-          (object).setCreatedBy(bundle.getOverrideUser());
-        }
       }
 
       session.update(persistedObject);

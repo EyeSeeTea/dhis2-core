@@ -28,8 +28,11 @@
 package org.hisp.dhis.tracker.bundle.persister;
 
 import java.util.Collections;
+import java.util.List;
+import java.util.Set;
 import javax.annotation.Nonnull;
 import org.hibernate.Session;
+import org.hisp.dhis.common.UID;
 import org.hisp.dhis.reservedvalue.ReservedValueService;
 import org.hisp.dhis.trackedentity.TrackedEntityInstance;
 import org.hisp.dhis.trackedentityattributevalue.TrackedEntityAttributeValueAuditService;
@@ -37,6 +40,7 @@ import org.hisp.dhis.tracker.TrackerType;
 import org.hisp.dhis.tracker.bundle.TrackerBundle;
 import org.hisp.dhis.tracker.converter.TrackerConverterService;
 import org.hisp.dhis.tracker.domain.TrackedEntity;
+import org.hisp.dhis.tracker.job.SideEffectTrigger;
 import org.hisp.dhis.tracker.job.TrackerSideEffectDataBundle;
 import org.hisp.dhis.tracker.preheat.TrackerPreheat;
 import org.springframework.stereotype.Component;
@@ -46,7 +50,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class TrackedEntityPersister
-    extends AbstractTrackerPersister<TrackedEntity, TrackedEntityInstance> {
+    extends AbstractTrackerPersister<
+        TrackedEntity, org.hisp.dhis.trackedentity.TrackedEntityInstance> {
   @Nonnull private final TrackerConverterService<TrackedEntity, TrackedEntityInstance> teConverter;
 
   public TrackedEntityPersister(
@@ -103,8 +108,14 @@ public class TrackedEntityPersister
 
   @Override
   protected TrackerSideEffectDataBundle handleSideEffects(
-      TrackerBundle bundle, TrackedEntityInstance entity) {
+      TrackerBundle bundle, TrackedEntityInstance entity, List<SideEffectTrigger> triggerList) {
     return TrackerSideEffectDataBundle.builder().build();
+  }
+
+  @Override
+  protected List<SideEffectTrigger> determineSideEffectTriggers(
+      TrackerPreheat preheat, TrackedEntity entity) {
+    return List.of();
   }
 
   @Override
@@ -114,8 +125,8 @@ public class TrackedEntityPersister
   }
 
   @Override
-  protected String getUpdatedTrackedEntity(TrackedEntityInstance entity) {
-    return null; // We don't need to keep track, Tei has already been
+  protected Set<UID> getUpdatedTrackedEntities(TrackedEntityInstance entity) {
+    return Set.of(); // We don't need to keep track, Tei has already been
     // updated
   }
 }

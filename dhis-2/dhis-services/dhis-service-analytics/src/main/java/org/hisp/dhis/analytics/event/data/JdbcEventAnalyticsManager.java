@@ -117,15 +117,20 @@ public class JdbcEventAnalyticsManager extends AbstractJdbcEventAnalyticsManager
       ProgramIndicatorService programIndicatorService,
       ProgramIndicatorSubqueryBuilder programIndicatorSubqueryBuilder,
       EventTimeFieldSqlRenderer timeFieldSqlRenderer,
-      ExecutionPlanStore executionPlanStore) {
+      ExecutionPlanStore executionPlanStore,
+      OrganisationUnitResolver organisationUnitResolver) {
     super(
-        jdbcTemplate, programIndicatorService, programIndicatorSubqueryBuilder, executionPlanStore);
+        jdbcTemplate,
+        programIndicatorService,
+        programIndicatorSubqueryBuilder,
+        executionPlanStore,
+        organisationUnitResolver);
     this.timeFieldSqlRenderer = timeFieldSqlRenderer;
   }
 
   @Override
   public Grid getEvents(EventQueryParams params, Grid grid, int maxLimit) {
-    String sql = getEventsOrEnrollmentsSql(params, maxLimit);
+    String sql = getAggregatedEnrollmentsSql(params, maxLimit);
 
     if (params.analyzeOnly()) {
       withExceptionHandling(
@@ -251,7 +256,7 @@ public class JdbcEventAnalyticsManager extends AbstractJdbcEventAnalyticsManager
     } else {
       count =
           withExceptionHandling(() -> jdbcTemplate.queryForObject(finalSqlValue, Long.class))
-              .orElse(0l);
+              .orElse(0L);
     }
 
     return count;

@@ -5,7 +5,7 @@
   <parent>
     <groupId>org.hisp.dhis</groupId>
     <artifactId>dhis</artifactId>
-    <version>2.40.4.1</version>
+    <version>2.40.11.1</version>
   </parent>
 
   <artifactId>dhis-web-api</artifactId>
@@ -116,6 +116,10 @@
     <dependency>
       <groupId>org.springframework.security</groupId>
       <artifactId>spring-security-ldap</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.data</groupId>
+      <artifactId>spring-data-redis</artifactId>
     </dependency>
     <dependency>
       <groupId>org.apache.jclouds</groupId>
@@ -337,6 +341,12 @@
     <dependency>
       <groupId>io.github.classgraph</groupId>
       <artifactId>classgraph</artifactId>
+    </dependency>
+
+    <!-- Image Processing -->
+    <dependency>
+      <groupId>org.imgscalr</groupId>
+      <artifactId>imgscalr-lib</artifactId>
     </dependency>
 
     <!-- Test -->

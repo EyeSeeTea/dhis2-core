@@ -203,9 +203,9 @@ public interface AppManager {
    *
    * @param app the app to look up files for
    * @param pageName the page requested
-   * @return the Resource representing the file, or null if no file was found
+   * @return the {@link ResourceResult}
    */
-  Resource getAppResource(App app, String pageName) throws IOException;
+  ResourceResult getAppResource(App app, String pageName) throws IOException;
 
   /**
    * Sets the app status to DELETION_IN_PROGRESS.
@@ -214,6 +214,8 @@ public interface AppManager {
    * @return true if the status was changed in this method.
    */
   boolean markAppToDelete(App app);
+
+  int getUriContentLength(Resource resource);
 
   // -------------------------------------------------------------------------
   // Static methods for manipulating a collection of apps
@@ -282,4 +284,15 @@ public interface AppManager {
         .filter(app -> app.getPluginType().equals(pluginType))
         .collect(Collectors.toList());
   }
+
+  /**
+   * Handles the manifest.webapp file by checking if the href for the dhis activity is set to "*".
+   * If so, it replaces it with the context path.
+   *
+   * @param resource the resource being handled
+   * @param application the application containing activities
+   * @param contextPath the context path to set if needed
+   * @return true if the manifest was handled, false otherwise
+   */
+  boolean handlingManifest(String resource, App application, String contextPath);
 }

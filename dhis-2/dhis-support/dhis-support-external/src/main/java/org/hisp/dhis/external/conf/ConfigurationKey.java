@@ -102,9 +102,6 @@ public enum ConfigurationKey {
   /** Sets 'hibernate.cache.use_query_cache'. (default: true) */
   USE_QUERY_CACHE("hibernate.cache.use_query_cache", "true", false),
 
-  /** Sets 'hibernate.hbm2ddl.auto', used in tests only. (default: validate) */
-  CONNECTION_SCHEMA("connection.schema", "validate", false),
-
   /** Max size of connection pool (default: 80). */
   CONNECTION_POOL_MAX_SIZE("connection.pool.max_size", "80", false),
 
@@ -160,6 +157,19 @@ public enum ConfigurationKey {
   CONNECTION_POOL_TIMEOUT("connection.pool.timeout", String.valueOf(SECONDS.toMillis(30)), false),
 
   /**
+   * Hikari DB pool feature. Connection leak detection threshold: Set the maximum number of
+   * milliseconds that a connection can be out of the pool before a message is logged. (default: 0 -
+   * no leak detection)
+   */
+  CONNECTION_POOL_WARN_MAX_AGE("connection.pool.warn_max_age", "0", false),
+  /**
+   * Analytics Hikari DB pool feature. Connection pool timeout: Set the maximum number of
+   * milliseconds that a client will wait for a connection from the pool. (default: 30s)
+   */
+  ANALYTICS_CONNECTION_POOL_TIMEOUT(
+      "analytics.connection.pool.timeout", String.valueOf(SECONDS.toMillis(30)), false),
+
+  /**
    * Sets the maximum number of milliseconds that the Hikari pool will wait for a connection to be
    * validated as alive. (default: 5ms)
    */
@@ -192,7 +202,8 @@ public enum ConfigurationKey {
   LDAP_SEARCH_FILTER("ldap.search.filter", "(cn={0})", false),
 
   /**
-   * File store provider, currently 'filesystem' and 'aws-s3' are supported. (default: filesystem)
+   * File store provider, currently 'filesystem', 'aws-s3' and 's3' are supported. (default:
+   * filesystem)
    */
   FILESTORE_PROVIDER("filestore.provider", "filesystem", false),
 
@@ -204,6 +215,8 @@ public enum ConfigurationKey {
 
   /** Datacenter location (not required). */
   FILESTORE_LOCATION("filestore.location", "", false),
+
+  FILESTORE_ENDPOINT("filestore.endpoint", "", false),
 
   /** Public identity / username. */
   FILESTORE_IDENTITY("filestore.identity", "", false),
@@ -406,6 +419,9 @@ public enum ConfigurationKey {
   /** Sets the audit matrix for tracker. (default: none). */
   AUDIT_TRACKER_MATRIX("audit.tracker", "", false),
 
+  /** Sets the audit matrix for API. (default: none). */
+  AUDIT_API_MATRIX("audit.api", "", false),
+
   /** Enable OIDC. (default: off). */
   OIDC_OAUTH2_LOGIN_ENABLED("oidc.oauth2.login.enabled", Constants.OFF, false),
 
@@ -417,22 +433,22 @@ public enum ConfigurationKey {
 
   /**
    * Google IdP specific parameters. Provider client ID: This is the identifier that the IdP
-   * assigned to your application.
+   * assigned to your application. (sensitive)
    */
   OIDC_PROVIDER_GOOGLE_CLIENT_ID("oidc.provider.google.client_id", "", true),
 
   /**
    * Google IdP specific parameters. Provider client secret: This value is a secret and should be
-   * kept secure.
+   * kept secure. (sensitive)
    */
   OIDC_PROVIDER_GOOGLE_CLIENT_SECRET("oidc.provider.google.client_secret", "", true),
 
-  /** Google IdP specific parameters. Mapping claim: *Optional. (default: email). */
+  /** Google IdP specific parameters. Mapping claim: *Optional. (default: email). (sensitive) */
   OIDC_PROVIDER_GOOGLE_MAPPING_CLAIM("oidc.provider.google.mapping_claim", "email", true),
 
   /**
-   * Google IdP specific parameters. Redirect URL: DHIS 2 instance URL, do not end with a slash,
-   * <br>
+   * Google IdP specific parameters. Redirect URL: DHIS 2 instance URL, do not end with a slash.
+   * (sensitive) <br>
    * e.g. https://dhis2.org/demo.
    */
   OIDC_PROVIDER_GOOGLE_REDIRECT_URI("oidc.provider.google.redirect_url", "", true),
@@ -557,9 +573,14 @@ public enum ConfigurationKey {
   LINKED_ACCOUNTS_ENABLED("linked_accounts.enabled", Constants.OFF, false),
 
   LINKED_ACCOUNTS_RELOGIN_URL("linked_accounts.relogin_url", "", false),
+
+  LINKED_ACCOUNTS_LOGOUT_URL("linked_accounts.logout_url", "", false),
+
   SWITCH_USER_FEATURE_ENABLED("switch_user_feature.enabled", Constants.OFF, false),
   SWITCH_USER_ALLOW_LISTED_IPS(
-      "switch_user_allow_listed_ips", "localhost,127.0.0.1,[0:0:0:0:0:0:0:1]", false);
+      "switch_user_allow_listed_ips", "localhost,127.0.0.1,[0:0:0:0:0:0:0:1]", false),
+
+  MAX_FILE_UPLOAD_SIZE_BYTES("max.file_upload_size", Integer.toString(10_000_000), false);
 
   private final String key;
 

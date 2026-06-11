@@ -27,10 +27,14 @@
  */
 package org.hisp.dhis.tracker.bundle.persister;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import org.hibernate.Session;
+import org.hisp.dhis.common.UID;
 import org.hisp.dhis.program.ProgramInstance;
 import org.hisp.dhis.reservedvalue.ReservedValueService;
 import org.hisp.dhis.trackedentity.TrackedEntityProgramOwnerService;
@@ -42,6 +46,8 @@ import org.hisp.dhis.tracker.bundle.TrackerBundle;
 import org.hisp.dhis.tracker.converter.TrackerConverterService;
 import org.hisp.dhis.tracker.converter.TrackerSideEffectConverterService;
 import org.hisp.dhis.tracker.domain.Enrollment;
+import org.hisp.dhis.tracker.domain.EnrollmentStatus;
+import org.hisp.dhis.tracker.job.SideEffectTrigger;
 import org.hisp.dhis.tracker.job.TrackerSideEffectDataBundle;
 import org.hisp.dhis.tracker.preheat.TrackerPreheat;
 import org.springframework.stereotype.Component;
@@ -123,7 +129,7 @@ public class EnrollmentPersister extends AbstractTrackerPersister<Enrollment, Pr
 
   @Override
   protected TrackerSideEffectDataBundle handleSideEffects(
-      TrackerBundle bundle, ProgramInstance programInstance) {
+      TrackerBundle bundle, ProgramInstance programInstance, List<SideEffectTrigger> triggers) {
     return TrackerSideEffectDataBundle.builder()
         .klass(ProgramInstance.class)
         .enrollmentRuleEffects(
@@ -134,7 +140,35 @@ public class EnrollmentPersister extends AbstractTrackerPersister<Enrollment, Pr
         .accessedBy(bundle.getUsername())
         .programInstance(programInstance)
         .program(programInstance.getProgram())
+        .programInstance(programInstance)
+        .program(programInstance.getProgram())
+        .triggers(triggers)
         .build();
+  }
+
+  @Override
+  protected List<SideEffectTrigger> determineSideEffectTriggers(
+      TrackerPreheat preheat, Enrollment entity) {
+    ProgramInstance persistedEnrollment = preheat.getEnrollment(entity.getUid());
+    List<SideEffectTrigger> triggers = new ArrayList<>();
+
+    if (persistedEnrollment == null) {
+      // New enrollment
+      triggers.add(SideEffectTrigger.ENROLLMENT);
+
+      // New enrollment that is completed
+      if (entity.getStatus() == EnrollmentStatus.COMPLETED) {
+        triggers.add(SideEffectTrigger.ENROLLMENT_COMPLETION);
+      }
+    } else {
+      // Existing enrollment that has changed to completed
+      if (persistedEnrollment.getStatus() != entity.getStatus().getProgramStatus()
+          && entity.getStatus() == EnrollmentStatus.COMPLETED) {
+        triggers.add(SideEffectTrigger.ENROLLMENT_COMPLETION);
+      }
+    }
+
+    return triggers;
   }
 
   @Override
@@ -163,7 +197,7 @@ public class EnrollmentPersister extends AbstractTrackerPersister<Enrollment, Pr
   }
 
   @Override
-  protected String getUpdatedTrackedEntity(ProgramInstance entity) {
-    return entity.getEntityInstance().getUid();
+  protected Set<UID> getUpdatedTrackedEntities(ProgramInstance entity) {
+    return Set.of(UID.of(entity.getEntityInstance()));
   }
 }

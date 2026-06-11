@@ -120,6 +120,8 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
 
   @Mock private ProgramNotificationTemplateService notificationTemplateService;
 
+  @Mock private ProgramNotificationInstanceService notificationInstanceService;
+
   private NotificationTemplateMapper notificationTemplateMapper = new NotificationTemplateMapper();
 
   private DefaultProgramNotificationService programNotificationService;
@@ -139,6 +141,8 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
   private UserGroup userGroup;
 
   private User userLvlTwoLeftLeft;
+
+  private User userLvlTwoLeftLeftDisabled;
 
   private User userLvlTwoLeftRight;
 
@@ -186,7 +190,7 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
 
   private ProgramNotificationTemplate programNotificationTemplateForToday;
 
-  private ProgramNotificationInstance programNotificationInstaceForToday;
+  private ProgramNotificationInstance programNotificationInstanceForToday;
 
   @BeforeEach
   public void initTest() {
@@ -197,6 +201,7 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
             this.programInstanceStore,
             this.programStageInstanceStore,
             this.manager,
+            notificationInstanceService,
             this.programNotificationRenderer,
             this.programStageNotificationRenderer,
             notificationTemplateService,
@@ -289,7 +294,7 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
   }
 
   @Test
-  void testUserGroupRecipient() {
+  void testUserGroupRecipientWithDisabledUser() {
     when(programInstanceStore.get(anyLong())).thenReturn(programInstances.iterator().next());
 
     when(messageService.sendMessage(any()))
@@ -313,7 +318,6 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
 
     MockMessage mockMessage = sentInternalMessages.iterator().next();
 
-    assertTrue(mockMessage.users.contains(userA));
     assertTrue(mockMessage.users.contains(userB));
   }
 
@@ -489,7 +493,7 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
   }
 
   @Test
-  void testDataElementRecipientWithInternalRecipients() {
+  void testDataElementRecipientWithInternalRecipientsWithOneDisabledUser() {
     when(programStageInstanceStore.get(anyLong()))
         .thenReturn(programStageInstances.iterator().next());
 
@@ -521,11 +525,25 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
         .add(programNotificationTemplate);
 
     programNotificationService.sendEventCompletionNotifications(programStageInstance.getId());
-
     assertEquals(1, sentInternalMessages.size());
-
-    assertTrue(sentInternalMessages.iterator().next().users.contains(userA));
+    assertFalse(sentInternalMessages.iterator().next().users.contains(userA));
     assertTrue(sentInternalMessages.iterator().next().users.contains(userB));
+    sentInternalMessages.clear();
+
+    programNotificationTemplate.setNotifyUsersInHierarchyOnly(true);
+    programNotificationService.sendEventCompletionNotifications(programStageInstance.getId());
+    assertEquals(1, sentInternalMessages.size());
+    assertFalse(sentInternalMessages.iterator().next().users.contains(userA));
+    assertTrue(sentInternalMessages.iterator().next().users.contains(userB));
+    sentInternalMessages.clear();
+
+    programNotificationTemplate.setNotifyUsersInHierarchyOnly(false);
+    programNotificationTemplate.setNotifyParentOrganisationUnitOnly(true);
+    programNotificationService.sendEventCompletionNotifications(programStageInstance.getId());
+    assertEquals(1, sentInternalMessages.size());
+    assertFalse(sentInternalMessages.iterator().next().users.contains(userA));
+    assertTrue(sentInternalMessages.iterator().next().users.contains(userB));
+    sentInternalMessages.clear();
   }
 
   @Test
@@ -604,6 +622,7 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
     assertTrue(users.contains(userLvlOneLeft));
     assertTrue(users.contains(userRoot));
 
+    assertFalse(users.contains(userLvlTwoLeftLeftDisabled));
     assertFalse(users.contains(userLvlTwoLeftRight));
     assertFalse(users.contains(userLvlOneRight));
   }
@@ -658,8 +677,8 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
               return new BatchResponseStatus(Collections.emptyList());
             });
 
-    when(manager.getAll(ProgramNotificationInstance.class))
-        .thenReturn(Collections.singletonList(programNotificationInstaceForToday));
+    when(notificationInstanceService.getProgramNotificationInstances(any()))
+        .thenReturn(List.of(programNotificationInstanceForToday));
 
     when(programNotificationRenderer.render(
             any(ProgramInstance.class), any(NotificationTemplate.class)))
@@ -705,13 +724,13 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
             ProgramNotificationRecipient.TRACKED_ENTITY_INSTANCE,
             today);
 
-    programNotificationInstaceForToday = new ProgramNotificationInstance();
-    programNotificationInstaceForToday.setProgramNotificationTemplateSnapshot(
+    programNotificationInstanceForToday = new ProgramNotificationInstance();
+    programNotificationInstanceForToday.setProgramNotificationTemplateSnapshot(
         notificationTemplateMapper.toProgramNotificationTemplateSnapshot(
             programNotificationTemplateForToday));
-    programNotificationInstaceForToday.setName(programNotificationTemplateForToday.getName());
-    programNotificationInstaceForToday.setAutoFields();
-    programNotificationInstaceForToday.setScheduledAt(today);
+    programNotificationInstanceForToday.setName(programNotificationTemplateForToday.getName());
+    programNotificationInstanceForToday.setAutoFields();
+    programNotificationInstanceForToday.setScheduledAt(today);
 
     root = createOrganisationUnit('R');
     lvlOneLeft = createOrganisationUnit('1');
@@ -727,14 +746,20 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
     userA = makeUser("U");
     userA.setPhoneNumber(USERA_PHONE_NUMBER);
     userA.getOrganisationUnits().add(lvlTwoLeftLeft);
+    userA.setDisabled(true);
 
     userB = makeUser("V");
     userB.setPhoneNumber(USERB_PHONE_NUMBER);
     userB.getOrganisationUnits().add(lvlTwoLeftLeft);
+    userB.getOrganisationUnits().add(lvlOneLeft);
 
     userGroup = createUserGroup('G', Sets.newHashSet(userA, userB));
 
     // User based on hierarchy
+    userLvlTwoLeftLeftDisabled = makeUser("D");
+    userLvlTwoLeftLeftDisabled.setDisabled(true);
+    userLvlTwoLeftLeftDisabled.getOrganisationUnits().add(lvlTwoLeftLeft);
+    lvlTwoLeftLeft.getUsers().add(userLvlTwoLeftLeftDisabled);
 
     userLvlTwoLeftLeft = makeUser("K");
     userLvlTwoLeftLeft.getOrganisationUnits().add(lvlTwoLeftLeft);
@@ -825,7 +850,7 @@ class ProgramNotificationServiceTest extends DhisConvenienceTest {
     programStageInstances.add(programStageInstance);
     programInstances.add(programInstance);
 
-    programNotificationInstaceForToday.setProgramInstance(programInstance);
+    programNotificationInstanceForToday.setProgramInstance(programInstance);
 
     notificationMessage = new NotificationMessage(SUBJECT, MESSAGE);
   }

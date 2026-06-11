@@ -32,12 +32,20 @@ import static org.hisp.dhis.analytics.OutputFormat.DATA_VALUE_SET;
 import static org.hisp.dhis.analytics.util.AnalyticsUtils.getDataValueSet;
 import static org.hisp.dhis.analytics.util.AnalyticsUtils.getDataValueSetAsGrid;
 import static org.hisp.dhis.analytics.util.AnalyticsUtils.isTableLayout;
+import static org.hisp.dhis.analytics.util.AnalyticsUtils.throwIllegalQueryEx;
 import static org.hisp.dhis.commons.collection.ListUtils.removeEmptys;
+import static org.hisp.dhis.feedback.ErrorCode.E7147;
+import static org.hisp.dhis.feedback.ErrorCode.E7151;
+import static org.hisp.dhis.setting.SettingKey.ANALYTICS_DOWNLOAD_COMBINATION_LIMIT;
 import static org.hisp.dhis.visualization.Visualization.addListIfEmpty;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.hisp.dhis.analytics.AnalyticsSecurityManager;
 import org.hisp.dhis.analytics.AnalyticsService;
@@ -52,7 +60,9 @@ import org.hisp.dhis.common.CombinationGenerator;
 import org.hisp.dhis.common.DimensionalItemObject;
 import org.hisp.dhis.common.Grid;
 import org.hisp.dhis.common.IdentifiableObjectUtils;
+import org.hisp.dhis.common.IllegalQueryException;
 import org.hisp.dhis.dxf2.datavalueset.DataValueSet;
+import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.system.grid.ListGrid;
 import org.hisp.dhis.visualization.Visualization;
 import org.springframework.stereotype.Service;
@@ -64,6 +74,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service("org.hisp.dhis.analytics.AnalyticsService")
 @RequiredArgsConstructor
 public class DefaultAnalyticsService implements AnalyticsService {
+
   private final AnalyticsSecurityManager securityManager;
 
   private final QueryValidator queryValidator;
@@ -73,6 +84,8 @@ public class DefaultAnalyticsService implements AnalyticsService {
   private final AnalyticsCache analyticsCache;
 
   private final DataAggregator dataAggregator;
+
+  private final SystemSettingManager systemSettingManager;
 
   // -------------------------------------------------------------------------
   // AnalyticsService implementation
@@ -241,10 +254,18 @@ public class DefaultAnalyticsService implements AnalyticsService {
       }
     }
 
+    CombinationGenerator<DimensionalItemObject> columnsCombination =
+        CombinationGenerator.newInstance(tableColumns);
+    checkCombinationLimit(columnsCombination);
+
+    CombinationGenerator<DimensionalItemObject> rowsCombination =
+        CombinationGenerator.newInstance(tableRows);
+    checkCombinationLimit(rowsCombination);
+
     visualization
         .setGridTitle(IdentifiableObjectUtils.join(params.getFilterItems()))
-        .setGridColumns(CombinationGenerator.newInstance(tableColumns).getCombinations())
-        .setGridRows(CombinationGenerator.newInstance(tableRows).getCombinations());
+        .setGridColumns(columnsCombination.getCombinations())
+        .setGridRows(rowsCombination.getCombinations());
 
     addListIfEmpty(visualization.getGridColumns());
     addListIfEmpty(visualization.getGridRows());
@@ -260,5 +281,73 @@ public class DefaultAnalyticsService implements AnalyticsService {
         valueMap,
         params.getDisplayProperty(),
         false);
+  }
+
+  /**
+   * Simply checks the limit of combination allowed for the given combination object.
+   *
+   * @param combinationGenerator the combination object.
+   * @throws IllegalQueryException if the limit allowance is not respected.
+   */
+  private void checkCombinationLimit(
+      CombinationGenerator<DimensionalItemObject> combinationGenerator) {
+    final int combinationLimit =
+        systemSettingManager.getIntSetting(ANALYTICS_DOWNLOAD_COMBINATION_LIMIT);
+
+    if (combinationGenerator.countCombinations() > combinationLimit) {
+      throwIllegalQueryEx(E7151);
+    }
+  }
+
+  /**
+   * Returns alternative grid dimensional items based on the given grid and all dimension items.
+   * Alternative grid items are used improve the performance of the grid rendering when the
+   * combination of dimension items is large. The alternative grid items are a list of lists of
+   * dimension items where each list represents a possible combination of dimension items that are
+   * used to render the grid.
+   *
+   * @param grid the grid
+   * @param dimensionItemsByDimension a map of dimension items by dimension
+   * @param dimensionIds the dimension ids
+   * @return the alternative grid items
+   */
+  static List<List<DimensionalItemObject>> getGridItems(
+      Grid grid,
+      Map<String, List<DimensionalItemObject>> dimensionItemsByDimension,
+      List<String> dimensionIds) {
+    Set<List<DimensionalItemObject>> alternateItems = new HashSet<>();
+
+    // Last column is the value column.
+    int metaCount = grid.getWidth() - 1;
+
+    for (List<Object> row : grid.getRows()) {
+      DimensionalItemObject[] alternateItem = new DimensionalItemObject[dimensionIds.size()];
+
+      for (int i = 0; i < metaCount; i++) {
+        // Header name is the dimension id.
+        String headerName = grid.getHeaders().get(i).getName();
+        String value = row.get(i).toString();
+        if (isDimension(headerName, dimensionItemsByDimension)) {
+          int indexInColumn = dimensionIds.indexOf(headerName);
+          alternateItem[indexInColumn] = findValueInDimensionItem(dimensionItemsByDimension, value);
+        }
+      }
+      alternateItems.add(Arrays.stream(alternateItem).collect(Collectors.toList()));
+    }
+    return new ArrayList<>(alternateItems);
+  }
+
+  private static DimensionalItemObject findValueInDimensionItem(
+      Map<String, List<DimensionalItemObject>> dimensionItemsByDimension, String value) {
+    return dimensionItemsByDimension.values().stream()
+        .flatMap(List::stream)
+        .filter(dio -> dio.getDimensionItem().equals(value))
+        .findFirst()
+        .orElseThrow(() -> new IllegalQueryException(E7147, value));
+  }
+
+  private static boolean isDimension(
+      String dimensionUid, Map<String, List<DimensionalItemObject>> rowsDimensionItemsByDimension) {
+    return rowsDimensionItemsByDimension.containsKey(dimensionUid);
   }
 }

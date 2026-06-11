@@ -27,6 +27,7 @@
  */
 package org.hisp.dhis.tracker;
 
+import static org.hisp.dhis.utils.Assertions.assertContainsOnly;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -37,11 +38,25 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import org.hisp.dhis.common.AuditType;
+import org.hisp.dhis.dataelement.DataElement;
+import org.hisp.dhis.trackedentitycomment.TrackedEntityComment;
+import org.hisp.dhis.trackedentitydatavalue.TrackedEntityDataValueAudit;
+import org.hisp.dhis.tracker.job.TrackerSideEffectDataBundle;
 import org.hisp.dhis.tracker.report.ImportReport;
 import org.hisp.dhis.tracker.report.Status;
+import org.hisp.dhis.tracker.report.TrackerTypeReport;
 import org.hisp.dhis.tracker.report.ValidationReport;
+import org.hisp.dhis.tracker.sideeffect.TrackerRuleEngineSideEffect;
+import org.hisp.dhis.tracker.sideeffect.TrackerScheduleMessageSideEffect;
+import org.hisp.dhis.tracker.sideeffect.TrackerSendMessageSideEffect;
 import org.hisp.dhis.tracker.validation.ValidationCode;
 import org.hisp.dhis.util.DateUtils;
 import org.joda.time.format.DateTimeFormat;
@@ -271,6 +286,82 @@ public class Assertions {
                     + report.getValidationReport().getWarnings()));
   }
 
+  public static void assertHasNoNotificationSideEffects(ImportReport report) {
+    assertNotNull(report, "The ImportReport should not be null.");
+
+    TrackerTypeReport typeReport =
+        report.getPersistenceReport().getTypeReportMap().get(TrackerType.EVENT);
+
+    assertNotNull(typeReport, "The TrackerTypeReport for EVENT should not be null.");
+    assertFalse(
+        typeReport.getSideEffectDataBundles().isEmpty(),
+        "Expected side effect data bundles but none were found.");
+
+    TrackerSideEffectDataBundle sideEffectDataBundle = typeReport.getSideEffectDataBundles().get(0);
+
+    List<TrackerRuleEngineSideEffect> ruleEngineSideEffects =
+        sideEffectDataBundle.getEventRuleEffects().values().stream()
+            .flatMap(List::stream)
+            .collect(Collectors.toList());
+
+    assertTrue(
+        ruleEngineSideEffects.stream().noneMatch(TrackerSendMessageSideEffect.class::isInstance),
+        "Unexpected notification side effect (TrackerSendMessageSideEffect) found.");
+  }
+
+  public static void assertHasSendNotificationSideEffects(ImportReport report) {
+    assertNotNull(report, "The ImportReport should not be null.");
+
+    TrackerTypeReport typeReport =
+        report.getPersistenceReport().getTypeReportMap().get(TrackerType.EVENT);
+
+    assertNotNull(typeReport, "The TrackerTypeReport for EVENT should not be null.");
+    assertFalse(
+        typeReport.getSideEffectDataBundles().isEmpty(),
+        "Expected side effect data bundles but none were found.");
+
+    TrackerSideEffectDataBundle sideEffectDataBundle = typeReport.getSideEffectDataBundles().get(0);
+
+    List<TrackerRuleEngineSideEffect> ruleEngineSideEffects =
+        sideEffectDataBundle.getEventRuleEffects().values().stream()
+            .flatMap(List::stream) // Flatten the list of lists into a single stream
+            .collect(Collectors.toList()); // Collect into a single list
+
+    assertTrue(
+        ruleEngineSideEffects.stream().anyMatch(TrackerSendMessageSideEffect.class::isInstance),
+        "Expected notification side effect (TrackerSendMessageSideEffect) but none were found.");
+  }
+
+  public static void assertHasScheduleNotificationForCurrentDate(ImportReport report) {
+    assertNotNull(report, "The ImportReport should not be null.");
+
+    TrackerTypeReport typeReport =
+        report.getPersistenceReport().getTypeReportMap().get(TrackerType.EVENT);
+    assertNotNull(typeReport, "The TrackerTypeReport for EVENT should not be null.");
+    assertFalse(
+        typeReport.getSideEffectDataBundles().isEmpty(),
+        "Expected side effect data bundles but none were found.");
+
+    Optional<TrackerScheduleMessageSideEffect> optionalSideEffect =
+        typeReport.getSideEffectDataBundles().stream()
+            .flatMap(bundle -> bundle.getEventRuleEffects().values().stream())
+            .flatMap(List::stream)
+            .filter(TrackerScheduleMessageSideEffect.class::isInstance)
+            .map(TrackerScheduleMessageSideEffect.class::cast)
+            .findFirst();
+
+    assertTrue(
+        optionalSideEffect.isPresent(),
+        "Expected notification side effect (TrackerScheduleMessageSideEffect) but none were found.");
+
+    TrackerScheduleMessageSideEffect sideEffect = optionalSideEffect.get();
+
+    // Assuming sideEffect.getData() returns a date string
+    String dateString = sideEffect.getData();
+    assertNotNull(dateString, "The scheduled date string should not be null.");
+    assertTrue(DateUtils.dateIsValid(dateString));
+  }
+
   public static void assertNoErrors(ImportReport report) {
     assertNotNull(report);
     assertEquals(
@@ -292,6 +383,45 @@ public class Assertions {
         String.format("Supported format is %s but found %s", DATE_WITH_TIMESTAMP_PATTERN, date));
   }
 
+  public static void assertNotes(
+      List<TrackedEntityComment> expected, List<TrackedEntityComment> actual) {
+    assertContainsOnly(expected, actual);
+    Map<String, TrackedEntityComment> expectedNotes =
+        expected.stream()
+            .collect(Collectors.toMap(TrackedEntityComment::getUid, Function.identity()));
+    Map<String, TrackedEntityComment> actualNotes =
+        actual.stream()
+            .collect(Collectors.toMap(TrackedEntityComment::getUid, Function.identity()));
+    List<Executable> assertions =
+        expectedNotes.entrySet().stream()
+            .map(
+                entry ->
+                    (Executable)
+                        () -> {
+                          TrackedEntityComment expectedNote = entry.getValue();
+                          TrackedEntityComment actualNote = actualNotes.get(entry.getKey());
+                          assertAll(
+                              "note assertions " + expectedNote.getUid(),
+                              () ->
+                                  assertEquals(
+                                      expectedNote.getCommentText(),
+                                      actualNote.getCommentText(),
+                                      "noteText"),
+                              () ->
+                                  assertEquals(
+                                      expectedNote.getCreator(),
+                                      actualNote.getCreator(),
+                                      "creator"),
+                              () ->
+                                  assertEquals(
+                                      expectedNote.getCreated(),
+                                      actualNote.getCreated(),
+                                      "created"));
+                        })
+            .collect(Collectors.toList());
+    assertAll("note assertions", assertions);
+  }
+
   private static boolean hasTimeStamp(Date date) {
     try {
 
@@ -307,6 +437,47 @@ public class Assertions {
     assertNotNull(report);
     assertFalse(
         report.hasErrors(), errorMessage("Expected no validation errors, instead got:\n", report));
+  }
+
+  /**
+   * assertTrackedEntityDataValueAudit asserts a TrackedEntityDataValueAudit obtained from the db
+   * and compares it with the expected value, auditType and dataElement.
+   *
+   * @param audit The TrackedEntityDataValueAudit entity obtained from persistence
+   * @param expectedDataElement The audit object is expected to be for this dataElement
+   * @param expectedAuditType The audit object is expected to have this auditType
+   * @param expectedValue The audit object is expected to have this value
+   */
+  public static void assertTrackedEntityDataValueAudit(
+      TrackedEntityDataValueAudit audit,
+      DataElement expectedDataElement,
+      AuditType expectedAuditType,
+      String expectedValue) {
+    assertAll(
+        () -> assertNotNull(audit),
+        () ->
+            assertEquals(
+                expectedAuditType,
+                audit.getAuditType(),
+                () ->
+                    "Expected audit type is "
+                        + expectedAuditType
+                        + " but found "
+                        + audit.getAuditType()),
+        () ->
+            assertEquals(
+                audit.getDataElement().getUid(),
+                expectedDataElement.getUid(),
+                () ->
+                    "Expected dataElement is "
+                        + expectedDataElement.getUid()
+                        + " but found "
+                        + audit.getDataElement().getUid()),
+        () ->
+            assertEquals(
+                expectedValue,
+                audit.getValue(),
+                () -> "Expected value is " + expectedValue + " but found " + audit.getValue()));
   }
 
   private static Supplier<String> errorMessage(String errorTitle, ValidationReport report) {

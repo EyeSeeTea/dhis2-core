@@ -34,8 +34,8 @@ import org.hisp.dhis.commons.util.DebugUtils;
 import org.hisp.dhis.dbms.DbmsUtils;
 import org.hisp.dhis.dxf2.metadata.MetadataImportParams;
 import org.hisp.dhis.dxf2.metadata.MetadataImportService;
+import org.hisp.dhis.notification.NotificationLevel;
 import org.hisp.dhis.security.SecurityContextRunnable;
-import org.hisp.dhis.system.notification.NotificationLevel;
 import org.hisp.dhis.system.notification.Notifier;
 import org.hisp.dhis.user.User;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,10 +64,6 @@ public class MetadataAsyncImporter extends SecurityContextRunnable {
     // This is to fix LazyInitializationException
     if (params.getUser() != null) {
       params.setUser(manager.get(User.class, params.getUser().getUid()));
-    }
-
-    if (params.getOverrideUser() != null) {
-      params.setOverrideUser(manager.get(User.class, params.getOverrideUser().getUid()));
     }
 
     metadataImportService.importMetadata(params);

@@ -32,13 +32,12 @@ import static java.time.ZoneId.systemDefault;
 import static java.time.ZonedDateTime.now;
 import static org.hisp.dhis.common.CodeGenerator.isValidUid;
 import static org.hisp.dhis.common.IdentifiableObjectUtils.getUids;
+import static org.hisp.dhis.security.DefaultSecurityService.LOGIN_MAX_FAILED_ATTEMPTS;
 import static org.hisp.dhis.system.util.ValidationUtils.usernameIsValid;
 import static org.hisp.dhis.system.util.ValidationUtils.uuidIsValid;
 
 import com.google.common.collect.Lists;
-import java.time.Instant;
 import java.time.ZonedDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
@@ -63,6 +62,7 @@ import org.hisp.dhis.cache.Cache;
 import org.hisp.dhis.cache.CacheProvider;
 import org.hisp.dhis.common.AuditLogUtil;
 import org.hisp.dhis.common.BaseIdentifiableObject;
+import org.hisp.dhis.common.UID;
 import org.hisp.dhis.common.UserOrgUnitType;
 import org.hisp.dhis.commons.filter.FilterUtils;
 import org.hisp.dhis.dataset.DataSet;
@@ -83,6 +83,8 @@ import org.hisp.dhis.util.DateUtils;
 import org.hisp.dhis.util.ObjectUtils;
 import org.jboss.aerogear.security.otp.api.Base32;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.security.core.session.SessionInformation;
+import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -113,6 +115,10 @@ public class DefaultUserService implements UserService {
 
   private final OrganisationUnitService organisationUnitService;
 
+  private final Cache<Integer> twoFaDisableFailedAttemptCache;
+
+  private final SessionRegistry sessionRegistry;
+
   public DefaultUserService(
       UserStore userStore,
       UserGroupService userGroupService,
@@ -123,7 +129,8 @@ public class DefaultUserService implements UserService {
       @Lazy PasswordManager passwordManager,
       @Lazy SecurityService securityService,
       AclService aclService,
-      @Lazy OrganisationUnitService organisationUnitService) {
+      @Lazy OrganisationUnitService organisationUnitService,
+      SessionRegistry sessionRegistry) {
     checkNotNull(userStore);
     checkNotNull(userGroupService);
     checkNotNull(userRoleStore);
@@ -132,6 +139,7 @@ public class DefaultUserService implements UserService {
     checkNotNull(securityService);
     checkNotNull(aclService);
     checkNotNull(organisationUnitService);
+    checkNotNull(sessionRegistry);
 
     this.userStore = userStore;
     this.userGroupService = userGroupService;
@@ -143,6 +151,8 @@ public class DefaultUserService implements UserService {
     this.userDisplayNameCache = cacheProvider.createUserDisplayNameCache();
     this.aclService = aclService;
     this.organisationUnitService = organisationUnitService;
+    this.twoFaDisableFailedAttemptCache = cacheProvider.createDisable2FAFailedAttemptCache(0);
+    this.sessionRegistry = sessionRegistry;
   }
 
   @Override
@@ -423,6 +433,12 @@ public class DefaultUserService implements UserService {
 
   @Override
   @Transactional
+  public void updateUserRoleNoAcl(UserRole userRole) {
+    userRoleStore.update(userRole, null);
+  }
+
+  @Override
+  @Transactional
   public void deleteUserRole(UserRole userRole) {
     userRoleStore.delete(userRole);
   }
@@ -518,7 +534,8 @@ public class DefaultUserService implements UserService {
     // Encode and set password
     Matcher matcher = UserService.BCRYPT_PATTERN.matcher(rawPassword);
     if (matcher.matches()) {
-      throw new IllegalArgumentException("Raw password look like BCrypt: " + rawPassword);
+      throw new IllegalArgumentException(
+          "Raw password look like BCrypt encoded password, this is most certainly a bug");
     }
 
     String encode = passwordManager.encode(rawPassword);
@@ -539,6 +556,7 @@ public class DefaultUserService implements UserService {
 
     if (user != null) {
       user.getAllAuthorities();
+      user.getAllRestrictions();
     }
 
     return user;
@@ -595,6 +613,10 @@ public class DefaultUserService implements UserService {
   @Override
   @Transactional(readOnly = true)
   public boolean userNonExpired(User user) {
+    if (user == null) {
+      return true;
+    }
+
     int credentialsExpires = systemSettingManager.credentialsExpires();
 
     if (credentialsExpires == 0) {
@@ -726,6 +748,7 @@ public class DefaultUserService implements UserService {
   }
 
   @Override
+  @Transactional(readOnly = true)
   public List<UserAccountExpiryInfo> getExpiringUserAccounts(int inDays) {
     return userStore.getExpiringUserAccounts(inDays);
   }
@@ -757,6 +780,23 @@ public class DefaultUserService implements UserService {
     approveTwoFactorSecret(user);
   }
 
+  @Override
+  public void registerFailed2FADisableAttempt(String username) {
+    Integer attempts = twoFaDisableFailedAttemptCache.get(username).orElse(0);
+    attempts++;
+    twoFaDisableFailedAttemptCache.put(username, attempts);
+  }
+
+  @Override
+  public void registerSuccess2FADisable(String username) {
+    twoFaDisableFailedAttemptCache.invalidate(username);
+  }
+
+  @Override
+  public boolean twoFaDisableIsLocked(String username) {
+    return twoFaDisableFailedAttemptCache.get(username).orElse(0) >= LOGIN_MAX_FAILED_ATTEMPTS;
+  }
+
   @Transactional
   @Override
   public void disableTwoFa(User user, String code) {
@@ -764,11 +804,18 @@ public class DefaultUserService implements UserService {
       throw new IllegalStateException("Two factor is not enabled, enable first");
     }
 
+    if (twoFaDisableIsLocked(user.getUsername())) {
+      throw new IllegalStateException("Too many failed attempts, try again later");
+    }
+
     if (!TwoFactoryAuthenticationUtils.verify(code, user.getSecret())) {
+      registerFailed2FADisableAttempt(user.getUsername());
       throw new IllegalStateException("Invalid code");
     }
 
     resetTwoFactor(user);
+
+    registerSuccess2FADisable(user.getUsername());
   }
 
   @Override
@@ -790,7 +837,7 @@ public class DefaultUserService implements UserService {
 
   @Override
   public void expireActiveSessions(User user) {
-    currentUserService.invalidateUserSessions(user.getUid());
+    invalidateUserSessions(user.getUid());
   }
 
   @Override
@@ -824,6 +871,7 @@ public class DefaultUserService implements UserService {
   }
 
   @Override
+  @Transactional(readOnly = true)
   public List<User> getUsersWithAuthority(String authority) {
     return userStore.getHasAuthority(authority);
   }
@@ -909,6 +957,7 @@ public class DefaultUserService implements UserService {
   }
 
   @Override
+  @Transactional(readOnly = true)
   public boolean hasTwoFactorRoleRestriction(User user) {
     return user.hasAnyRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
   }
@@ -955,24 +1004,50 @@ public class DefaultUserService implements UserService {
   @Override
   @Nonnull
   @Transactional(readOnly = true)
-  public List<User> getLinkedUserAccounts(@Nonnull User actingUser) {
-    return userStore.getLinkedUserAccounts(actingUser);
+  public List<UserLookup> getLinkedUserAccounts(@Nonnull User actingUser) {
+    List<User> linkedUserAccounts = userStore.getLinkedUserAccounts(actingUser);
+
+    List<UserLookup> userLookups =
+        linkedUserAccounts.stream().map(UserLookup::fromUser).collect(Collectors.toList());
+
+    for (int i = 0; i < linkedUserAccounts.size(); i++) {
+      userLookups
+          .get(i)
+          .setRoles(
+              linkedUserAccounts.get(i).getUserRoles().stream()
+                  .map(UserRole::getUid)
+                  .collect(Collectors.toSet()));
+      userLookups
+          .get(i)
+          .setGroups(
+              linkedUserAccounts.get(i).getGroups().stream()
+                  .map(UserGroup::getUid)
+                  .collect(Collectors.toSet()));
+    }
+
+    return userLookups;
   }
 
   @Override
+  @Transactional(readOnly = true)
+  public List<User> getUsersWithOrgUnits(
+      @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull Set<UID> uids) {
+    return userStore.getUsersWithOrgUnits(orgUnitProperty, uids);
+  }
+
   @Transactional
-  public void setActiveLinkedAccounts(@Nonnull User actingUser, @Nonnull String activeUsername) {
-    Instant oneHourAgo = Instant.now().minus(1, ChronoUnit.HOURS);
-    Instant oneHourInTheFuture = Instant.now().plus(1, ChronoUnit.HOURS);
+  @Override
+  public void setActiveLinkedAccounts(@Nonnull String actingUser, @Nonnull String activeUsername) {
+    userStore.setActiveLinkedAccounts(actingUser, activeUsername);
+  }
 
-    List<User> linkedUserAccounts = getLinkedUserAccounts(actingUser);
-    for (User user : linkedUserAccounts) {
-      user.setLastLogin(
-          user.getUsername().equals(activeUsername)
-              ? Date.from(oneHourInTheFuture)
-              : Date.from(oneHourAgo));
-
-      updateUser(user);
+  @Override
+  public void invalidateUserSessions(String userUid) {
+    User user = userStore.getByUid(userUid);
+    CurrentUserDetailsImpl userDetails = createUserDetails(user, true, true);
+    if (userDetails != null) {
+      List<SessionInformation> allSessions = sessionRegistry.getAllSessions(userDetails, false);
+      allSessions.forEach(SessionInformation::expireNow);
     }
   }
 }

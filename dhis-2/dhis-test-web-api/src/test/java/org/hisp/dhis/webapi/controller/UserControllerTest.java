@@ -28,6 +28,8 @@
 package org.hisp.dhis.webapi.controller;
 
 import static java.util.Collections.emptySet;
+import static org.hisp.dhis.external.conf.ConfigurationKey.LINKED_ACCOUNTS_ENABLED;
+import static org.hisp.dhis.web.HttpStatus.OK;
 import static org.hisp.dhis.web.HttpStatus.Series.SUCCESSFUL;
 import static org.hisp.dhis.web.WebClient.Accept;
 import static org.hisp.dhis.web.WebClient.Body;
@@ -50,6 +52,7 @@ import org.hisp.dhis.category.Category;
 import org.hisp.dhis.category.CategoryOption;
 import org.hisp.dhis.category.CategoryOptionGroupSet;
 import org.hisp.dhis.common.BaseIdentifiableObject;
+import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.feedback.ErrorCode;
 import org.hisp.dhis.jsontree.JsonArray;
 import org.hisp.dhis.jsontree.JsonBoolean;
@@ -70,7 +73,6 @@ import org.hisp.dhis.user.CurrentUserDetails;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserGroup;
 import org.hisp.dhis.user.UserRole;
-import org.hisp.dhis.user.UserService;
 import org.hisp.dhis.user.sharing.Sharing;
 import org.hisp.dhis.user.sharing.UserAccess;
 import org.hisp.dhis.web.HttpStatus;
@@ -103,11 +105,11 @@ class UserControllerTest extends DhisControllerConvenienceTest {
 
   @Autowired private SessionRegistry sessionRegistry;
 
-  @Autowired private UserService userService;
+  @Autowired ObjectMapper objectMapper;
+
+  @Autowired private DhisConfigurationProvider config;
 
   private User peter;
-
-  @Autowired ObjectMapper objectMapper;
 
   @BeforeEach
   void setUp() {
@@ -116,7 +118,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     this.peter = switchToNewUser("Peter");
     switchToSuperuser();
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}?importReportMode=ERRORS",
             peter.getUid(),
@@ -140,7 +142,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     PATCH(
             "/users/" + superUser.getUid(),
             "[{'op':'add','path':'/userRoles','value':[{'id':'" + roleBID + "'}]}]")
-        .content(HttpStatus.OK);
+        .content(OK);
 
     assertTrue(sessionRegistry.getAllSessions(sessionPrincipal, false).isEmpty());
   }
@@ -155,7 +157,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     PATCH(
             "/users/" + superUser.getUid(),
             "[{'op':'add','path':'/userRoles','value':[{'id':'" + roleB.getUid() + "'}]}]")
-        .content(HttpStatus.OK);
+        .content(OK);
 
     String roleBID = userService.getUserRoleByName("ROLE_B").getUid();
 
@@ -171,7 +173,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
                 + "   'value': ['NONE']"
                 + " }"
                 + "]")
-        .content(HttpStatus.OK);
+        .content(OK);
 
     assertTrue(sessionRegistry.getAllSessions(sessionPrincipal, false).isEmpty());
   }
@@ -186,7 +188,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
   @Test
   void testResetToInvite_NoEmail() {
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             peter.getUid() + "?importReportMode=ERRORS",
@@ -199,7 +201,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
   @Test
   void testUpdateValueInLegacyUserCredentials() {
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             peter.getUid() + "?importReportMode=ERRORS",
@@ -212,7 +214,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
   @Test
   void testUpdateOpenIdInLegacyFormat() {
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             peter.getUid() + "?importReportMode=ERRORS",
@@ -224,11 +226,10 @@ class UserControllerTest extends DhisControllerConvenienceTest {
   }
 
   @Test
-  @DisplayName(
-      "Make sure an update after first setting OpenID works, has special handling logic in UserObjectBundleHook.")
+  @DisplayName("Check updates after setting an OpenID value works")
   void testSetOpenIdThenUpdate() {
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             peter.getUid() + "?importReportMode=ERRORS",
@@ -238,11 +239,65 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     assertEquals("mapping value", user.getOpenId());
 
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             peter.getUid() + "?importReportMode=ERRORS",
             Body("[{'op': 'add', 'path': '/openId', 'value': 'mapping value'}]")));
+  }
+
+  @Test
+  @DisplayName(
+      "Check you can set same OpenID value on multiple accounts when linked accounts are enabled")
+  void testSetOpenIdThenUpdateWithLinkedAccountsEnabled() {
+    config.getProperties().put(LINKED_ACCOUNTS_ENABLED.getKey(), "on");
+
+    User wendy = createUserWithAuth("wendy");
+
+    assertStatus(
+        OK,
+        PATCH(
+            "/users/{id}",
+            peter.getUid() + "?importReportMode=ERRORS",
+            Body("[{'op': 'add', 'path': '/openId', 'value': 'peter@mail.org'}]")));
+
+    assertStatus(
+        OK,
+        PATCH(
+            "/users/{id}",
+            wendy.getUid() + "?importReportMode=ERRORS",
+            Body("[{'op': 'add', 'path': '/openId', 'value': 'peter@mail.org'}]")));
+  }
+
+  @Test
+  @DisplayName(
+      "Check you can't set same OpenID value on multiple accounts when linked accounts are disabled")
+  void testSetOpenIdThenUpdateWithLinkedAccountsDisabled() {
+    config.getProperties().put(LINKED_ACCOUNTS_ENABLED.getKey(), "off");
+
+    User wendy = createUserWithAuth("wendy");
+
+    assertStatus(
+        OK,
+        PATCH(
+            "/users/{id}",
+            peter.getUid() + "?importReportMode=ERRORS",
+            Body("[{'op': 'add', 'path': '/openId', 'value': 'peter@mail.org'}]")));
+
+    JsonImportSummary response =
+        PATCH(
+                "/users/{id}",
+                wendy.getUid() + "?importReportMode=ERRORS",
+                Body("[{'op': 'add', 'path': '/openId', 'value': 'peter@mail.org'}]"))
+            .content(HttpStatus.CONFLICT)
+            .get("response")
+            .as(JsonImportSummary.class);
+
+    assertEquals(
+        "Property `OIDC mapping value` already exists, was given `peter@mail.org`.",
+        response
+            .find(JsonErrorReport.class, error -> error.getErrorCode() == ErrorCode.E4054)
+            .getMessage());
   }
 
   /**
@@ -441,7 +496,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     switchContextToUser(user);
 
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PUT(
             "/users/" + user.getUid(),
             " {"
@@ -473,7 +528,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     String mainRoleUid = peterBefore.getUserRoles().iterator().next().getUid();
 
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             this.peter.getUid() + "?importReportMode=ERRORS",
@@ -500,7 +555,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     String mainRoleUid = peterBefore.getUserRoles().iterator().next().getUid();
 
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             this.peter.getUid() + "?importReportMode=ERRORS",
@@ -526,7 +581,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     manager.save(userGroupB);
 
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             this.peter.getUid() + "?importReportMode=ERRORS",
@@ -552,7 +607,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     manager.save(userGroupB);
 
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             this.peter.getUid() + "?importReportMode=ERRORS",
@@ -568,7 +623,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     assertEquals(2, userGroups.size());
 
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             this.peter.getUid() + "?importReportMode=ERRORS",
@@ -592,6 +647,44 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     assertEquals(
         "User with id does-not-exist could not be found.",
         POST("/users/does-not-exist/reset").error(HttpStatus.NOT_FOUND).getMessage());
+  }
+
+  @Test
+  @DisplayName(
+      "Test that a user can also delete a user without UserRole write access, see: DHIS2-19693")
+  void testReplicateUserNoRoleAuth() {
+    systemSettingManager.saveSystemSetting(SettingKey.CAN_GRANT_OWN_USER_ROLES, Boolean.TRUE);
+
+    UserRole replicateRole =
+        createUserRole("ROLE_REPLICATE", "F_REPLICATE_USER", "F_USER_ADD", "F_USER_DELETE");
+    userService.addUserRole(replicateRole);
+    String roleUid = userService.getUserRoleByName("ROLE_REPLICATE").getUid();
+    PATCH(
+            "/users/" + peter.getUid(),
+            "[{'op':'add','path':'/userRoles','value':[{'id':'" + roleUid + "'}]}]")
+        .content(OK);
+
+    peter = userService.getUser(this.peter.getUid());
+    assertTrue(
+        peter
+            .getAllAuthorities()
+            .containsAll(Set.of("F_REPLICATE_USER", "F_USER_ADD", "F_USER_DELETE")));
+    switchContextToUser(this.peter);
+
+    assertWebMessage(
+        "Created",
+        201,
+        "OK",
+        "User replica created",
+        POST(
+                "/users/" + peter.getUid() + "/replica",
+                "{'username':'peter2','password':'Saf€sEcre1'}")
+            .content());
+
+    User peter2 = userService.getUserByUsername("peter2");
+
+    // Then
+    DELETE("/users/" + peter2.getUid()).content(OK);
   }
 
   @Test
@@ -716,11 +809,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
   void testPutJsonObject() {
     JsonObject user = GET("/users/{id}", peter.getUid()).content();
     assertWebMessage(
-        "OK",
-        200,
-        "OK",
-        null,
-        PUT("/38/users/" + peter.getUid(), user.toString()).content(HttpStatus.OK));
+        "OK", 200, "OK", null, PUT("/38/users/" + peter.getUid(), user.toString()).content(OK));
   }
 
   @Test
@@ -740,8 +829,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
             HttpStatus.CREATED, POST("/userGroups", objectMapper.writeValueAsString(newGroup)));
 
     // assert lastUpdated is by admin & no users in group
-    JsonUserGroup userGroup =
-        GET("/userGroups/" + newGroupUid).content(HttpStatus.OK).as(JsonUserGroup.class);
+    JsonUserGroup userGroup = GET("/userGroups/" + newGroupUid).content(OK).as(JsonUserGroup.class);
 
     JsonUser lastUpdatedByAdmin = userGroup.getLastUpdatedBy();
     assertTrue(userGroup.getUsers().isEmpty());
@@ -774,7 +862,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
 
     // assert lastUpdated has been updated by new user & users not empty
     JsonUserGroup userGroupUserAdded =
-        GET("/userGroups/" + newGroupUid).content(HttpStatus.OK).as(JsonUserGroup.class);
+        GET("/userGroups/" + newGroupUid).content(OK).as(JsonUserGroup.class);
     JsonUser lastUpdatedByNewUser = userGroupUserAdded.getLastUpdatedBy();
     assertFalse(userGroupUserAdded.getUsers().isEmpty());
     assertEquals(newUser.getUid(), lastUpdatedByNewUser.getId());
@@ -798,8 +886,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
             HttpStatus.CREATED, POST("/userGroups", objectMapper.writeValueAsString(newGroup)));
 
     // assert lastUpdated is by admin
-    JsonUserGroup userGroup =
-        GET("/userGroups/" + newGroupUid).content(HttpStatus.OK).as(JsonUserGroup.class);
+    JsonUserGroup userGroup = GET("/userGroups/" + newGroupUid).content(OK).as(JsonUserGroup.class);
 
     JsonUser lastUpdatedByAdmin = userGroup.getLastUpdatedBy();
     assertTrue(userGroup.getUsers().isEmpty());
@@ -833,7 +920,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
 
     // assert lastUpdated has been updated by new user
     JsonUserGroup userGroupUserAdded =
-        GET("/userGroups/" + newGroupUid).content(HttpStatus.OK).as(JsonUserGroup.class);
+        GET("/userGroups/" + newGroupUid).content(OK).as(JsonUserGroup.class);
     JsonUser lastUpdatedByNewUser = userGroupUserAdded.getLastUpdatedBy();
     assertFalse(userGroupUserAdded.getUsers().isEmpty());
     assertEquals(newUser.getUid(), lastUpdatedByNewUser.getId());
@@ -858,7 +945,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
 
     // assert lastUpdated has been updated by admin
     JsonUserGroup userGroupUserRemoved =
-        GET("/userGroups/" + newGroupUid).content(HttpStatus.OK).as(JsonUserGroup.class);
+        GET("/userGroups/" + newGroupUid).content(OK).as(JsonUserGroup.class);
     JsonUser updatedByAdminAgain = userGroupUserRemoved.getLastUpdatedBy();
     assertTrue(userGroupUserRemoved.getUsers().isEmpty());
     assertEquals(superUser.getUid(), updatedByAdminAgain.getId());
@@ -876,7 +963,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
         PUT(
                 "/38/users/" + peter.getUid(),
                 user.node().addMember("settings", "{\"uiLocale\":\"de\"}").toString())
-            .content(HttpStatus.OK));
+            .content(OK));
     assertEquals(
         "de",
         GET("/userSettings/keyUiLocale?userId=" + user.getId(), Accept("text/plain"))
@@ -887,9 +974,7 @@ class UserControllerTest extends DhisControllerConvenienceTest {
   void testPutJsonObject_Pre38() {
     JsonObject user = GET("/users/{uid}", peter.getUid()).content();
     JsonImportSummary summary =
-        PUT("/37/users/" + peter.getUid(), user.toString())
-            .content(HttpStatus.OK)
-            .as(JsonImportSummary.class);
+        PUT("/37/users/" + peter.getUid(), user.toString()).content(OK).as(JsonImportSummary.class);
     assertEquals("ImportReport", summary.getResponseType());
     assertEquals("OK", summary.getStatus());
     assertEquals(1, summary.getStats().getUpdated());
@@ -1078,25 +1163,24 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     manager.save(userGroupB);
 
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             peter.getUid() + "?importReportMode=ERRORS",
             Body(
                 "[{'op': 'add', 'path': '/userGroups', 'value': [ { 'id': 'GZSvMCVowAx' }, { 'id': 'B6JNeAQ6akX' } ] } ]")));
 
-    JsonResponse response =
-        GET("/users/{id}?fields=userGroups", peter.getUid()).content(HttpStatus.OK);
+    JsonResponse response = GET("/users/{id}?fields=userGroups", peter.getUid()).content(OK);
     assertEquals(2, response.getArray("userGroups").size());
 
     assertStatus(
-        HttpStatus.OK,
+        OK,
         PATCH(
             "/users/{id}",
             peter.getUid() + "?importReportMode=ERRORS",
             Body(
                 "[{'op': 'add', 'path': '/userGroups', 'value': [ { 'id': 'GZSvMCVowAx' } ] } ]")));
-    response = GET("/users/{id}?fields=userGroups", peter.getUid()).content(HttpStatus.OK);
+    response = GET("/users/{id}?fields=userGroups", peter.getUid()).content(OK);
     assertEquals(1, response.getArray("userGroups").size());
   }
 
@@ -1164,10 +1248,29 @@ class UserControllerTest extends DhisControllerConvenienceTest {
     newUser.setSecret(secret);
     userService.addUser(newUser);
 
-    POST("/users/" + newUser.getUid() + "/twoFA/disabled").content(HttpStatus.OK);
+    POST("/users/" + newUser.getUid() + "/twoFA/disabled").content(OK);
 
     User userByUsername = userService.getUserByUsername(newUser.getUsername());
 
     assertNull(userByUsername.getSecret());
+  }
+
+  @Test
+  void testGetUserRoleUsersAreTransformed() {
+    UserRole role = createUserRole('X');
+    User user = makeUser("Y");
+    user.setEmail("y@y.org");
+    userService.addUser(user);
+    role.getMembers().add(user);
+    manager.save(role);
+
+    JsonObject userInRole =
+        GET("/userRoles/{id}?fields=users[*]", role.getUid())
+            .content(HttpStatus.OK)
+            .getArray("users")
+            .getObject(0);
+
+    assertFalse(userInRole.has("email"), "email should not be exposed");
+    assertEquals(user.getUid(), userInRole.getString("id").string());
   }
 }

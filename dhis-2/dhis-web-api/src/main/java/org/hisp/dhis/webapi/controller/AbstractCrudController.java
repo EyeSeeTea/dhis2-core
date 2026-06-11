@@ -61,12 +61,12 @@ import org.hisp.dhis.common.UID;
 import org.hisp.dhis.commons.jackson.jsonpatch.JsonPatch;
 import org.hisp.dhis.commons.jackson.jsonpatch.JsonPatchException;
 import org.hisp.dhis.commons.jackson.jsonpatch.JsonPatchOperation;
+import org.hisp.dhis.dxf2.common.ImportReportMode;
 import org.hisp.dhis.dxf2.metadata.MetadataExportService;
 import org.hisp.dhis.dxf2.metadata.MetadataImportParams;
 import org.hisp.dhis.dxf2.metadata.MetadataImportService;
 import org.hisp.dhis.dxf2.metadata.collection.CollectionService;
 import org.hisp.dhis.dxf2.metadata.feedback.ImportReport;
-import org.hisp.dhis.dxf2.metadata.feedback.ImportReportMode;
 import org.hisp.dhis.dxf2.metadata.objectbundle.validation.TranslationsCheck;
 import org.hisp.dhis.dxf2.webmessage.WebMessage;
 import org.hisp.dhis.eventhook.EventHookPublisher;
@@ -350,7 +350,7 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
     return webMessage;
   }
 
-  private T doPatch(JsonPatch patch, T persistedObject) throws JsonPatchException {
+  protected T doPatch(JsonPatch patch, T persistedObject) throws JsonPatchException {
     // TODO: To remove when we remove old UserCredentials compatibility
     if (persistedObject instanceof User) {
       for (JsonPatchOperation op : patch.getOperations()) {
@@ -681,7 +681,8 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
 
     persistedObject.setTranslations(translations);
     List<ObjectReport> objectReports = new ArrayList<>();
-    translationsCheck.run(persistedObject, getEntityClass(), objectReports::add, getSchema(), 0);
+    translationsCheck.run(
+        persistedObject, getEntityClass(), objectReports::add, getSchema(), 0, null);
 
     if (objectReports.isEmpty()) {
       manager.update(persistedObject, currentUser);
@@ -1039,6 +1040,13 @@ public abstract class AbstractCrudController<T extends IdentifiableObject>
   protected void preUpdateItems(T entity, IdentifiableObjects items) throws ConflictException {}
 
   protected void postUpdateItems(T entity, IdentifiableObjects items) {}
+
+  protected void updatePermissionCheck(User currentUser, T persistedObject)
+      throws ForbiddenException {
+    if (!aclService.canUpdate(currentUser, persistedObject)) {
+      throw new ForbiddenException("You don't have the proper permissions to update this object.");
+    }
+  }
 
   // --------------------------------------------------------------------------
   // Helpers

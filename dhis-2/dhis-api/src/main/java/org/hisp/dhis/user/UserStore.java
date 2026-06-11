@@ -33,11 +33,14 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import org.hisp.dhis.common.IdentifiableObjectStore;
+import org.hisp.dhis.common.UID;
+import org.hisp.dhis.organisationunit.OrganisationUnit;
 
 /**
  * @author Nguyen Hong Duc
@@ -151,10 +154,15 @@ public interface UserStore extends IdentifiableObjectStore<User> {
   List<User> getUserByUsernames(Collection<String> usernames);
 
   /**
-   * Retrieves the User associated with the User with the given open ID.
+   * Retrieves the most recently-used enabled User associated with the given open ID.
+   *
+   * <p>This only returns enabled users.
+   *
+   * <p>A newly-created User (last login is null) will only be returned if there is no enabled User
+   * with the given open ID and a non-null last login.
    *
    * @param openId open ID.
-   * @return the User or null if there is no match.
+   * @return the User or null if there is no enabled user match.
    */
   @CheckForNull
   User getUserByOpenId(@Nonnull String openId);
@@ -186,4 +194,27 @@ public interface UserStore extends IdentifiableObjectStore<User> {
   List<User> getHasAuthority(String authority);
 
   List<User> getLinkedUserAccounts(User currentUser);
+
+  /**
+   * Sets the active account for the next login session.
+   *
+   * <p>This method updates the last login timestamp of the target account 'activeUsername', to one
+   * hour in the future. This future timestamp ensures the account appears first when sorting linked
+   * accounts by last login date, and hence the top of the list will be the 'active'.
+   *
+   * @param actingUser the acting/current user
+   * @param activeUsername the username of the user to set as active
+   */
+  void setActiveLinkedAccounts(@Nonnull String actingUser, @Nonnull String activeUsername);
+
+  /**
+   * Retrieves all {@link User}s that have an entry for the {@link OrganisationUnit}s in the given
+   * table
+   *
+   * @param orgUnitProperty {@link UserOrgUnitProperty} used to search
+   * @param uids {@link OrganisationUnit}s uids to match on
+   * @return matching {@link User}s
+   */
+  List<User> getUsersWithOrgUnits(
+      @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull Set<UID> uids);
 }

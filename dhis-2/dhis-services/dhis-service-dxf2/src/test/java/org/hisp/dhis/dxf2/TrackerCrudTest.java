@@ -27,12 +27,13 @@
  */
 package org.hisp.dhis.dxf2;
 
+import static org.hisp.dhis.DhisConvenienceTest.createOrganisationUnit;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.anyBoolean;
-import static org.mockito.Mockito.anyList;
-import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -54,11 +55,11 @@ import org.hisp.dhis.dxf2.events.trackedentity.TrackedEntityInstance;
 import org.hisp.dhis.dxf2.importsummary.ImportStatus;
 import org.hisp.dhis.dxf2.importsummary.ImportSummaries;
 import org.hisp.dhis.importexport.ImportStrategy;
+import org.hisp.dhis.notification.NotificationLevel;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.query.QueryService;
 import org.hisp.dhis.scheduling.JobConfiguration;
 import org.hisp.dhis.schema.SchemaService;
-import org.hisp.dhis.system.notification.NotificationLevel;
 import org.hisp.dhis.system.notification.Notifier;
 import org.hisp.dhis.trackedentity.DefaultTrackedEntityInstanceService;
 import org.hisp.dhis.trackedentity.TrackedEntityType;
@@ -137,7 +138,7 @@ class TrackerCrudTest {
             any(JobConfiguration.class), any(NotificationLevel.class), anyString(), anyBoolean()))
         .thenReturn(notifier);
     when(notifier.notify(any(JobConfiguration.class), anyString())).thenReturn(notifier);
-    when(notifier.clear(any())).thenReturn(notifier);
+    when(notifier.clear(any(JobConfiguration.class))).thenReturn(notifier);
 
     when(defaultTrackedEntityInstanceService.getTrackedEntityInstance(
             trackedEntityInstanceUid, user))
@@ -164,7 +165,7 @@ class TrackerCrudTest {
             TrackedEntityType.class, IdScheme.UID, trackedEntityTypeUid))
         .thenReturn(new TrackedEntityType());
     when(identifiableObjectManager.getObject(OrganisationUnit.class, IdScheme.UID, orgUnitUid))
-        .thenReturn(new OrganisationUnit());
+        .thenReturn(createOrganisationUnit('A'));
     when(trackerAccessManager.canWrite(
             any(), any(org.hisp.dhis.trackedentity.TrackedEntityInstance.class)))
         .thenReturn(new ArrayList<>());
@@ -224,6 +225,63 @@ class TrackerCrudTest {
             .anyMatch(is -> is.isStatus(ImportStatus.ERROR)));
 
     verify(defaultTrackedEntityInstanceService, times(1)).addTrackedEntityInstance(any());
+  }
+
+  @Test
+  void shouldNotAddTrackedEntityWhenDryRun() {
+    List<TrackedEntityInstance> trackedEntityInstanceList =
+        Collections.singletonList(trackedEntityInstance);
+
+    when(importOptions.getImportStrategy()).thenReturn(ImportStrategy.CREATE);
+    when(importOptions.isDryRun()).thenReturn(true);
+
+    ImportSummaries importSummaries =
+        trackedEntityInstanceService.mergeOrDeleteTrackedEntityInstances(
+            trackedEntityInstanceList, importOptions, jobConfiguration);
+
+    assertFalse(
+        importSummaries.getImportSummaries().stream()
+            .anyMatch(is -> is.isStatus(ImportStatus.ERROR)));
+
+    verify(defaultTrackedEntityInstanceService, times(0)).addTrackedEntityInstance(any());
+  }
+
+  @Test
+  void shouldNotUpdateTrackedEntityWhenDryRun() {
+    List<TrackedEntityInstance> trackedEntityInstanceList =
+        Collections.singletonList(trackedEntityInstance);
+
+    when(importOptions.getImportStrategy()).thenReturn(ImportStrategy.UPDATE);
+    when(importOptions.isDryRun()).thenReturn(true);
+
+    ImportSummaries importSummaries =
+        trackedEntityInstanceService.mergeOrDeleteTrackedEntityInstances(
+            trackedEntityInstanceList, importOptions, jobConfiguration);
+
+    assertFalse(
+        importSummaries.getImportSummaries().stream()
+            .anyMatch(is -> is.isStatus(ImportStatus.ERROR)));
+
+    verify(defaultTrackedEntityInstanceService, times(0)).updateTrackedEntityInstance(any());
+  }
+
+  @Test
+  void shouldNotDeleteTrackedEntityWhenDryRun() {
+    List<TrackedEntityInstance> trackedEntityInstanceList =
+        Collections.singletonList(trackedEntityInstance);
+
+    when(importOptions.getImportStrategy()).thenReturn(ImportStrategy.DELETE);
+    when(importOptions.isDryRun()).thenReturn(true);
+
+    ImportSummaries importSummaries =
+        trackedEntityInstanceService.mergeOrDeleteTrackedEntityInstances(
+            trackedEntityInstanceList, importOptions, jobConfiguration);
+
+    assertFalse(
+        importSummaries.getImportSummaries().stream()
+            .anyMatch(is -> is.isStatus(ImportStatus.ERROR)));
+
+    verify(defaultTrackedEntityInstanceService, times(0)).deleteTrackedEntityInstance(any());
   }
 
   @Test

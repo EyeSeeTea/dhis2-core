@@ -36,9 +36,12 @@ import static org.apache.commons.collections4.CollectionUtils.isNotEmpty;
 import static org.apache.commons.lang3.ObjectUtils.defaultIfNull;
 import static org.apache.commons.lang3.StringUtils.EMPTY;
 import static org.apache.commons.lang3.StringUtils.SPACE;
+import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.commons.lang3.StringUtils.isEmpty;
+import static org.apache.commons.lang3.StringUtils.substringBefore;
 import static org.hisp.dhis.analytics.AggregationType.CUSTOM;
 import static org.hisp.dhis.analytics.AggregationType.NONE;
+import static org.hisp.dhis.analytics.DataQueryParams.LEVEL_PREFIX;
 import static org.hisp.dhis.analytics.DataQueryParams.NUMERATOR_DENOMINATOR_PROPERTIES_COUNT;
 import static org.hisp.dhis.analytics.DataType.NUMERIC;
 import static org.hisp.dhis.analytics.QueryKey.NV;
@@ -55,10 +58,13 @@ import static org.hisp.dhis.analytics.util.AnalyticsUtils.throwIllegalQueryEx;
 import static org.hisp.dhis.analytics.util.AnalyticsUtils.withExceptionHandling;
 import static org.hisp.dhis.common.DimensionItemType.DATA_ELEMENT;
 import static org.hisp.dhis.common.DimensionItemType.PROGRAM_INDICATOR;
+import static org.hisp.dhis.common.DimensionalObject.ORGUNIT_DIM_ID;
+import static org.hisp.dhis.common.DimensionalObject.PERIOD_DIM_ID;
 import static org.hisp.dhis.common.DimensionalObjectUtils.COMPOSITE_DIM_OBJECT_PLAIN_SEP;
 import static org.hisp.dhis.common.QueryOperator.IN;
 import static org.hisp.dhis.common.RequestTypeAware.EndpointItem.ENROLLMENT;
 import static org.hisp.dhis.commons.util.TextUtils.getCommaDelimitedString;
+import static org.hisp.dhis.feedback.ErrorCode.E7149;
 import static org.hisp.dhis.system.util.MathUtils.getRounded;
 import static org.springframework.transaction.annotation.Propagation.REQUIRES_NEW;
 
@@ -87,30 +93,19 @@ import org.apache.commons.lang3.time.DateFormatUtils;
 import org.apache.commons.lang3.time.DateUtils;
 import org.hisp.dhis.analytics.AggregationType;
 import org.hisp.dhis.analytics.EventOutputType;
+import org.hisp.dhis.analytics.MeasureFilter;
 import org.hisp.dhis.analytics.SortOrder;
 import org.hisp.dhis.analytics.analyze.ExecutionPlanStore;
 import org.hisp.dhis.analytics.common.ProgramIndicatorSubqueryBuilder;
 import org.hisp.dhis.analytics.event.EventQueryParams;
 import org.hisp.dhis.analytics.util.AnalyticsUtils;
-import org.hisp.dhis.common.BaseIdentifiableObject;
-import org.hisp.dhis.common.DimensionType;
-import org.hisp.dhis.common.DimensionalItemObject;
-import org.hisp.dhis.common.DimensionalObject;
-import org.hisp.dhis.common.DisplayProperty;
-import org.hisp.dhis.common.Grid;
-import org.hisp.dhis.common.GridHeader;
-import org.hisp.dhis.common.IdScheme;
-import org.hisp.dhis.common.InQueryFilter;
-import org.hisp.dhis.common.QueryFilter;
-import org.hisp.dhis.common.QueryItem;
-import org.hisp.dhis.common.Reference;
-import org.hisp.dhis.common.RepeatableStageParams;
-import org.hisp.dhis.common.ValueType;
+import org.hisp.dhis.common.*;
 import org.hisp.dhis.commons.collection.ListUtils;
 import org.hisp.dhis.commons.util.SqlHelper;
 import org.hisp.dhis.commons.util.TextUtils;
 import org.hisp.dhis.feedback.ErrorCode;
 import org.hisp.dhis.option.Option;
+import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.period.Period;
 import org.hisp.dhis.program.AnalyticsType;
 import org.hisp.dhis.program.ProgramIndicator;
@@ -137,6 +132,10 @@ public abstract class AbstractJdbcEventAnalyticsManager {
 
   private static final String COL_VALUE = "value";
 
+  private static final String COL_ORGANIZATION = "ou";
+
+  private static final String OUTER_SQL_ALIAS = "t1";
+
   private static final String AND = " and ";
 
   private static final String OR = " or ";
@@ -155,6 +154,8 @@ public abstract class AbstractJdbcEventAnalyticsManager {
   protected final ProgramIndicatorSubqueryBuilder programIndicatorSubqueryBuilder;
 
   protected final ExecutionPlanStore executionPlanStore;
+
+  private final OrganisationUnitResolver organisationUnitResolver;
 
   /**
    * Returns a SQL paging clause.
@@ -280,7 +281,21 @@ public abstract class AbstractJdbcEventAnalyticsManager {
    * clause.
    */
   protected List<String> getGroupByColumnNames(EventQueryParams params, boolean isAggregated) {
-    return getSelectColumns(params, true, isAggregated);
+    List<String> columns = getSelectColumns(params, true, isAggregated);
+
+    return removeAliases(columns);
+  }
+
+  /**
+   * It removes the aliases from the list of given columns, if any.
+   *
+   * <p>ie: columnA as cA -> columnA
+   *
+   * @param columns the columns that may have aliases.
+   * @return the columns without aliases.
+   */
+  List<String> removeAliases(List<String> columns) {
+    return columns.stream().map(c -> substringBefore(c, " as ")).collect(toList());
   }
 
   /**
@@ -326,6 +341,17 @@ public abstract class AbstractJdbcEventAnalyticsManager {
         .getDimensions()
         .forEach(
             dimension -> {
+              if (params.isAggregatedEnrollments()
+                  && dimension.getDimensionType() == DimensionType.PERIOD) {
+                dimension
+                    .getItems()
+                    .forEach(
+                        it ->
+                            columns.add(
+                                ((Period) it).getPeriodType().getPeriodTypeEnum().getName()));
+                return;
+              }
+
               if (isGroupByClause
                   && dimension.getDimensionType() == DimensionType.PERIOD
                   && params.hasNonDefaultBoundaries()) {
@@ -522,6 +548,13 @@ public abstract class AbstractJdbcEventAnalyticsManager {
     }
 
     // ---------------------------------------------------------------------
+    // Filtering criteria
+    // ---------------------------------------------------------------------
+    if (params.hasMeasureCriteria()) {
+      sql += getMeasureCriteriaSql(params, aggregateClause);
+    }
+
+    // ---------------------------------------------------------------------
     // Limit, add one to max to enable later check against max limit
     // ---------------------------------------------------------------------
 
@@ -651,6 +684,42 @@ public abstract class AbstractJdbcEventAnalyticsManager {
         grid.addNullValues(NUMERATOR_DENOMINATOR_PROPERTIES_COUNT);
       }
     }
+  }
+
+  /**
+   * Returns the "having" clause for the aggregated query. The "having" clause is calculated based
+   * on the measure criteria in the {@link EventQueryParams} and the existing aggregate clause. The
+   * expression has to be first cast to a numeric type and then rounded to 10 decimal places,
+   * otherwise the comparison may fail due to floating point precision issues in Postgres.
+   *
+   * @param params the {@link EventQueryParams}
+   * @param aggregateClause the aggregate clause to use in the SQL
+   * @return the "having" clause
+   */
+  protected String getMeasureCriteriaSql(EventQueryParams params, String aggregateClause) {
+    SqlHelper sqlHelper = new SqlHelper();
+    StringBuilder builder = new StringBuilder();
+
+    for (MeasureFilter filter : params.getMeasureCriteria().keySet()) {
+      Double criterion = params.getMeasureCriteria().get(filter);
+
+      String sqlFilter =
+          String.format(
+              " round(%s::numeric, 10) %s %s ",
+              aggregateClause, getOperatorByMeasureFilter(filter), criterion);
+
+      builder.append(sqlHelper.havingAnd()).append(sqlFilter);
+    }
+
+    return builder.toString();
+  }
+
+  private String getOperatorByMeasureFilter(MeasureFilter filter) throws IllegalQueryException {
+    QueryOperator qo = QueryOperator.fromString(filter.toString());
+    if (qo != null) {
+      return qo.getValue();
+    }
+    throw new IllegalQueryException(E7149, filter.toString());
   }
 
   /**
@@ -882,7 +951,7 @@ public abstract class AbstractJdbcEventAnalyticsManager {
    * @param maxLimit max number of records to return.
    * @return a SQL query.
    */
-  protected String getEventsOrEnrollmentsSql(EventQueryParams params, int maxLimit) {
+  protected String getAggregatedEnrollmentsSql(EventQueryParams params, int maxLimit) {
     String sql = getSelectClause(params);
 
     sql += getFromClause(params);
@@ -892,6 +961,93 @@ public abstract class AbstractJdbcEventAnalyticsManager {
     sql += getSortClause(params);
 
     sql += getPagingClause(params, maxLimit);
+
+    return sql;
+  }
+
+  /**
+   * Template method that generates a SQL query for retrieving aggregated enrollments.
+   *
+   * @param params the {@link List<GridHeader>} to drive the query generation.
+   * @param params the {@link EventQueryParams} to drive the query generation.
+   * @return a SQL query.
+   */
+  protected String getAggregatedEnrollmentsSql(List<GridHeader> headers, EventQueryParams params) {
+    String sql = getSelectClause(params);
+
+    sql += getFromClause(params);
+
+    sql += getWhereClause(params);
+
+    final String tempSql = sql;
+
+    String headerColumns =
+        headers.stream()
+            .filter(
+                header ->
+                    !header.getName().equalsIgnoreCase(COL_VALUE)
+                        && !header.getName().equalsIgnoreCase(PERIOD_DIM_ID)
+                        && !header.getName().equalsIgnoreCase(ORGUNIT_DIM_ID))
+            .map(
+                header -> {
+                  String headerName = header.getName();
+                  if (tempSql.contains(headerName)) {
+                    return OUTER_SQL_ALIAS + "." + quote(headerName);
+                  }
+                  if (headerName.contains(".")) {
+                    headerName = headerName.split("\\.")[1];
+                  }
+
+                  return OUTER_SQL_ALIAS + "." + quote(headerName);
+                })
+            .collect(joining(","));
+
+    String orgColumns = EMPTY;
+
+    if (!params.isOrganisationUnitMode(OrganisationUnitSelectionMode.SELECTED)
+        && !params.isOrganisationUnitMode(OrganisationUnitSelectionMode.CHILDREN)) {
+
+      orgColumns =
+          params.getDimensionOrFilterItems(ORGUNIT_DIM_ID).stream()
+              .map(d -> LEVEL_PREFIX + ((OrganisationUnit) d).getLevel())
+              .distinct()
+              .collect(joining(","));
+    }
+
+    String periodColumns =
+        params.getDimensions().stream()
+            .filter(d -> d.getDimensionType() == DimensionType.PERIOD)
+            .flatMap(
+                d ->
+                    d.getItems().stream()
+                        .map(
+                            it ->
+                                OUTER_SQL_ALIAS
+                                    + "."
+                                    + ((Period) it).getPeriodType().getPeriodTypeEnum().getName())
+                        .collect(Collectors.toList())
+                        .stream()
+                        .distinct())
+            .collect(joining(","));
+
+    String columns =
+        (!isBlank(orgColumns) ? orgColumns : "," + ORGUNIT_DIM_ID)
+            + (!isBlank(periodColumns) ? "," + periodColumns : EMPTY)
+            + (!isBlank(headerColumns) ? "," + headerColumns : EMPTY);
+
+    sql =
+        "select count("
+            + OUTER_SQL_ALIAS
+            + ".pi) as "
+            + COL_VALUE
+            + ", "
+            + columns
+            + " from ("
+            + sql
+            + ") "
+            + OUTER_SQL_ALIAS
+            + " group by "
+            + columns;
 
     return sql;
   }
@@ -1115,21 +1271,27 @@ public abstract class AbstractJdbcEventAnalyticsManager {
   }
 
   /**
-   * Creates a SQL statement for a single filter inside a query item.
+   * Creates a SQL statement for a single filter inside a query item. Made public for testing
+   * purposes.
    *
    * @param item the {@link QueryItem}.
    * @param filter the {@link QueryFilter}.
    * @param params the {@link EventQueryParams}.
    */
-  private String toSql(QueryItem item, QueryFilter filter, EventQueryParams params) {
+  public String toSql(QueryItem item, QueryFilter filter, EventQueryParams params) {
     String field =
         item.hasAggregationType()
             ? getSelectSql(filter, item, params)
             : getSelectSql(filter, item, params.getEarliestStartDate(), params.getLatestEndDate());
 
+    String filterString =
+        item.getValueType() == ValueType.ORGANISATION_UNIT
+            ? organisationUnitResolver.resolveOrgUnits(filter, params.getUserOrgUnits())
+            : filter.getFilter();
+
     if (IN.equals(filter.getOperator())) {
       InQueryFilter inQueryFilter =
-          new InQueryFilter(field, encode(filter.getFilter(), false), item.isText());
+          new InQueryFilter(field, encode(filterString, false), !item.isNumeric());
 
       return inQueryFilter.getSqlFilter();
     } else {

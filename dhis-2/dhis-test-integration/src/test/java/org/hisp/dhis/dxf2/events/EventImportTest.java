@@ -30,9 +30,12 @@ package org.hisp.dhis.dxf2.events;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.hisp.dhis.tracker.Assertions.assertTrackedEntityDataValueAudit;
 import static org.hisp.dhis.user.UserRole.AUTHORITY_ALL;
 import static org.hisp.dhis.util.DateUtils.getIso8601NoTz;
+import static org.hisp.dhis.utils.Assertions.assertContains;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -58,6 +61,7 @@ import org.hibernate.SessionFactory;
 import org.hisp.dhis.category.Category;
 import org.hisp.dhis.category.CategoryCombo;
 import org.hisp.dhis.category.CategoryOption;
+import org.hisp.dhis.common.AuditType;
 import org.hisp.dhis.common.CodeGenerator;
 import org.hisp.dhis.common.DataDimensionType;
 import org.hisp.dhis.common.IdentifiableObjectManager;
@@ -90,11 +94,17 @@ import org.hisp.dhis.program.ProgramStageInstanceService;
 import org.hisp.dhis.program.ProgramStatus;
 import org.hisp.dhis.program.ProgramType;
 import org.hisp.dhis.program.UserInfoSnapshot;
+import org.hisp.dhis.security.Authorities;
+import org.hisp.dhis.security.acl.AccessStringHelper;
 import org.hisp.dhis.test.integration.TransactionalIntegrationTest;
+import org.hisp.dhis.trackedentity.TrackedEntityDataValueAuditQueryParams;
 import org.hisp.dhis.trackedentity.TrackedEntityType;
 import org.hisp.dhis.trackedentity.TrackedEntityTypeService;
+import org.hisp.dhis.trackedentitydatavalue.TrackedEntityDataValueAudit;
+import org.hisp.dhis.trackedentitydatavalue.TrackedEntityDataValueAuditService;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserService;
+import org.hisp.dhis.user.sharing.UserAccess;
 import org.hisp.dhis.util.DateUtils;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -114,6 +124,8 @@ class EventImportTest extends TransactionalIntegrationTest {
   @Autowired private TrackedEntityTypeService trackedEntityTypeService;
 
   @Autowired private TrackedEntityInstanceService trackedEntityInstanceService;
+
+  @Autowired private TrackedEntityDataValueAuditService entityDataValueAuditService;
 
   @Autowired private ProgramStageDataElementService programStageDataElementService;
 
@@ -253,7 +265,7 @@ class EventImportTest extends TransactionalIntegrationTest {
     pi.setName("EventImportTestPI");
     pi.setUid(CodeGenerator.generateUid());
     manager.save(pi);
-    event = createEvent("eventUid001");
+    event = createEvent("eventUid001", programB, programStageB, organisationUnitB);
     superUser = createAndAddAdminUser(AUTHORITY_ALL);
     injectSecurityContext(superUser);
   }
@@ -270,9 +282,10 @@ class EventImportTest extends TransactionalIntegrationTest {
             "10");
     String uid = eventService.addEventsJson(is, null).getImportSummaries().get(0).getReference();
 
-    Event event = createEvent(uid);
+    Event newEvent = createEvent(uid, programB, programStageB, organisationUnitB);
 
-    ProgramStageInstance ev = programStageInstanceService.getProgramStageInstance(event.getUid());
+    ProgramStageInstance ev =
+        programStageInstanceService.getProgramStageInstance(newEvent.getUid());
 
     assertNotNull(ev);
     assertEquals(1, ev.getEventDataValues().size());
@@ -289,15 +302,15 @@ class EventImportTest extends TransactionalIntegrationTest {
     dataValueB.setDataElement(dataElementB.getUid());
     dataValueB.setStoredBy(superUser.getName());
 
-    event.setDataValues(Set.of(dataValueA, dataValueB));
+    newEvent.setDataValues(Set.of(dataValueA, dataValueB));
 
     Date now = new Date();
 
-    eventService.updateEventDataValues(event);
+    eventService.updateEventDataValues(newEvent);
 
     manager.clear();
 
-    ev = programStageInstanceService.getProgramStageInstance(event.getUid());
+    ev = programStageInstanceService.getProgramStageInstance(newEvent.getUid());
 
     assertNotNull(ev);
     assertNotNull(ev.getEventDataValues());
@@ -338,6 +351,156 @@ class EventImportTest extends TransactionalIntegrationTest {
   }
 
   @Test
+  void shouldNotUpdateEventWhenProgramNorProgramStageNotAccessible() {
+    Enrollment enrollment =
+        createEnrollment(programA.getUid(), trackedEntityInstanceMaleA.getTrackedEntityInstance());
+    assertEquals(
+        ImportStatus.SUCCESS, enrollmentService.addEnrollment(enrollment, null, null).getStatus());
+
+    Event event =
+        createEvent(CodeGenerator.generateUid(), programA, programStageA, organisationUnitA);
+    ImportSummary addEventSummary =
+        eventService.addEvent(
+            event, new ImportOptions().setImportStrategy(ImportStrategy.CREATE), true);
+    assertEquals(ImportStatus.SUCCESS, addEventSummary.getStatus());
+
+    ImportSummary updateEventSummary =
+        eventService.updateEvent(
+            event, false, new ImportOptions().setImportStrategy(ImportStrategy.UPDATE), false);
+    assertEquals(ImportStatus.SUCCESS, updateEventSummary.getStatus());
+
+    User user =
+        createAndAddUser(
+            "userUpdate",
+            organisationUnitA,
+            Authorities.F_TRACKED_ENTITY_INSTANCE_SEARCH_IN_ALL_ORGUNITS.name());
+
+    programStageA.getSharing().addUserAccess(new UserAccess(user, AccessStringHelper.DATA_READ));
+    manager.update(programStageA);
+
+    injectSecurityContext(user);
+
+    updateEventSummary =
+        eventService.updateEvent(
+            event, false, new ImportOptions().setImportStrategy(ImportStrategy.UPDATE), false);
+    assertEquals(ImportStatus.ERROR, updateEventSummary.getStatus());
+    assertContains(
+        "User has no data read access to program:", updateEventSummary.getConflictsDescription());
+    assertContains(
+        "User has no data write access to program stage:",
+        updateEventSummary.getConflictsDescription());
+  }
+
+  @Test
+  void shouldAuditChangelogWhenUpdatingEventDataValues() throws IOException {
+    String previousValueB = "10";
+    String newValueB = "15";
+    String newValueA = "20";
+    InputStream is =
+        createEventJsonInputStream(
+            programB.getUid(),
+            programStageB.getUid(),
+            organisationUnitB.getUid(),
+            trackedEntityInstanceMaleA.getTrackedEntityInstance(),
+            dataElementB,
+            previousValueB);
+    String uid = eventService.addEventsJson(is, null).getImportSummaries().get(0).getReference();
+
+    Event newEvent = createEvent(uid, programB, programStageB, organisationUnitB);
+
+    ProgramStageInstance ev =
+        programStageInstanceService.getProgramStageInstance(newEvent.getUid());
+
+    assertNotNull(ev);
+    assertEquals(1, ev.getEventDataValues().size());
+
+    // add a new data value and update an existing one
+
+    DataValue dataValueA = new DataValue();
+    dataValueA.setValue(newValueA);
+    dataValueA.setDataElement(dataElementA.getUid());
+    dataValueA.setStoredBy(superUser.getName());
+
+    DataValue dataValueB = new DataValue();
+    dataValueB.setValue(newValueB);
+    dataValueB.setDataElement(dataElementB.getUid());
+    dataValueB.setStoredBy(superUser.getName());
+
+    newEvent.setDataValues(Set.of(dataValueA, dataValueB));
+
+    eventService.updateEventDataValues(newEvent);
+
+    List<TrackedEntityDataValueAudit> createdAudits =
+        entityDataValueAuditService.getTrackedEntityDataValueAudits(
+            new TrackedEntityDataValueAuditQueryParams()
+                .setDataElements(List.of(dataElementA))
+                .setProgramStageInstances(List.of(ev))
+                .setAuditTypes(List.of(AuditType.CREATE)));
+
+    List<TrackedEntityDataValueAudit> updatedAudits =
+        entityDataValueAuditService.getTrackedEntityDataValueAudits(
+            new TrackedEntityDataValueAuditQueryParams()
+                .setDataElements(List.of(dataElementB))
+                .setProgramStageInstances(List.of(ev))
+                .setAuditTypes(List.of(AuditType.UPDATE)));
+
+    assertFalse(createdAudits.isEmpty());
+    assertFalse(updatedAudits.isEmpty());
+    assertEquals(1, createdAudits.size());
+    assertEquals(1, updatedAudits.size());
+
+    assertTrackedEntityDataValueAudit(
+        createdAudits.get(0), dataElementA, AuditType.CREATE, newValueA);
+    assertTrackedEntityDataValueAudit(
+        updatedAudits.get(0), dataElementB, AuditType.UPDATE, previousValueB);
+  }
+
+  @Test
+  void shouldAuditChangelogWhenDeletingEventDataValue() throws IOException {
+    String previousValueB = "10";
+    InputStream is =
+        createEventJsonInputStream(
+            programB.getUid(),
+            programStageB.getUid(),
+            organisationUnitB.getUid(),
+            trackedEntityInstanceMaleA.getTrackedEntityInstance(),
+            dataElementB,
+            "10");
+    String uid = eventService.addEventsJson(is, null).getImportSummaries().get(0).getReference();
+
+    Event event = createEvent(uid, programB, programStageB, organisationUnitB);
+
+    ProgramStageInstance ev = programStageInstanceService.getProgramStageInstance(event.getUid());
+
+    assertNotNull(ev);
+    assertEquals(1, ev.getEventDataValues().size());
+
+    // delete data Element in Event Data Values by setting its value to null
+
+    DataValue dataValueB = new DataValue();
+    dataValueB.setValue(null);
+    dataValueB.setDataElement(dataElementB.getUid());
+    dataValueB.setStoredBy(superUser.getName());
+
+    event.setDataValues(Set.of(dataValueB));
+
+    eventService.updateEventDataValues(event);
+
+    List<TrackedEntityDataValueAudit> deleteAudits =
+        entityDataValueAuditService.getTrackedEntityDataValueAudits(
+            new TrackedEntityDataValueAuditQueryParams()
+                .setDataElements(List.of(dataElementB))
+                .setProgramStageInstances(List.of(ev))
+                .setAuditTypes(List.of(AuditType.DELETE)));
+
+    assertFalse(deleteAudits.isEmpty());
+    assertEquals(1, deleteAudits.size());
+
+    assertTrackedEntityDataValueAudit(
+        deleteAudits.get(0), dataElementB, AuditType.DELETE, previousValueB);
+  }
+
+  @Test
   void shouldDeleteDataElementFromEventDataValuesWhenSetDataValueToNull() throws IOException {
     InputStream is =
         createEventJsonInputStream(
@@ -349,7 +512,7 @@ class EventImportTest extends TransactionalIntegrationTest {
             "10");
     String uid = eventService.addEventsJson(is, null).getImportSummaries().get(0).getReference();
 
-    Event event = createEvent(uid);
+    Event event = createEvent(uid, programB, programStageB, organisationUnitB);
 
     ProgramStageInstance ev = programStageInstanceService.getProgramStageInstance(event.getUid());
 
@@ -591,8 +754,8 @@ class EventImportTest extends TransactionalIntegrationTest {
 
   @Test
   void testAddOneValidAndOneInvalidEvent() throws IOException {
-    Event validEvent = createEvent("eventUid004");
-    Event invalidEvent = createEvent("eventUid005");
+    Event validEvent = createEvent("eventUid004", programB, programStageB, organisationUnitB);
+    Event invalidEvent = createEvent("eventUid005", programB, programStageB, organisationUnitB);
     invalidEvent.setOrgUnit("INVALID");
     InputStream is =
         createEventsJsonInputStream(
@@ -609,9 +772,9 @@ class EventImportTest extends TransactionalIntegrationTest {
   void testAddValidEnrollmentWithOneValidAndOneInvalidEvent() {
     Enrollment enrollment =
         createEnrollment(programA.getUid(), trackedEntityInstanceMaleA.getTrackedEntityInstance());
-    Event validEvent = createEvent("eventUid004");
+    Event validEvent = createEvent("eventUid004", programB, programStageB, organisationUnitB);
     validEvent.setOrgUnit(organisationUnitA.getUid());
-    Event invalidEvent = createEvent("eventUid005");
+    Event invalidEvent = createEvent("eventUid005", programB, programStageB, organisationUnitB);
     invalidEvent.setOrgUnit("INVALID");
     enrollment.setEvents(Lists.newArrayList(validEvent, invalidEvent));
     ImportSummary importSummary = enrollmentService.addEnrollment(enrollment, null);
@@ -667,8 +830,8 @@ class EventImportTest extends TransactionalIntegrationTest {
     eventService.addEvent(event, importOptions, false);
     eventService.deleteEvent(event.getUid());
     manager.flush();
-    Event event2 = createEvent("eventUid002");
-    Event event3 = createEvent("eventUid003");
+    Event event2 = createEvent("eventUid002", programB, programStageB, organisationUnitB);
+    Event event3 = createEvent("eventUid003", programB, programStageB, organisationUnitB);
     importOptions.setImportStrategy(ImportStrategy.CREATE);
     event.setDeleted(true);
     List<Event> events = new ArrayList<>();
@@ -939,7 +1102,7 @@ class EventImportTest extends TransactionalIntegrationTest {
       String person,
       DataElement dataElement,
       String value) {
-    Event event = createEvent(null);
+    Event event = createEvent(null, programB, programStageB, organisationUnitB);
     event.setProgram(program);
     event.setProgramStage(programStage);
     event.setOrgUnit(orgUnit);
@@ -983,15 +1146,16 @@ class EventImportTest extends TransactionalIntegrationTest {
     return enrollment;
   }
 
-  private Event createEvent(String uid) {
+  private Event createEvent(
+      String uid, Program program, ProgramStage programStage, OrganisationUnit orgUnit) {
     Event event = new Event();
     event.setUid(uid);
     event.setEvent(uid);
     event.setStatus(EventStatus.ACTIVE);
-    event.setProgram(programB.getUid());
-    event.setProgramStage(programStageB.getUid());
+    event.setProgram(program.getUid());
+    event.setProgramStage(programStage.getUid());
     event.setTrackedEntityInstance(trackedEntityInstanceMaleA.getTrackedEntityInstance());
-    event.setOrgUnit(organisationUnitB.getUid());
+    event.setOrgUnit(orgUnit.getUid());
     event.setEnrollment(pi.getUid());
     event.setEventDate(EVENT_DATE);
     event.setDeleted(false);

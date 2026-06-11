@@ -73,6 +73,7 @@ import org.hisp.dhis.dxf2.common.OrderParams;
 import org.hisp.dhis.eventchart.EventChart;
 import org.hisp.dhis.eventreport.EventReport;
 import org.hisp.dhis.eventvisualization.EventVisualization;
+import org.hisp.dhis.fieldfilter.Defaults;
 import org.hisp.dhis.fieldfiltering.FieldFilterParams;
 import org.hisp.dhis.fieldfiltering.FieldFilterService;
 import org.hisp.dhis.indicator.Indicator;
@@ -291,7 +292,8 @@ public class DefaultMetadataExportService implements MetadataExportService {
 
         String plural = schemaService.getDynamicSchema(klass).getPlural();
         generator.writeArrayFieldStart(plural);
-        fieldFilterService.toObjectNodesStream(fieldFilterParams, generator);
+        fieldFilterService.toObjectNodesStream(
+            fieldFilterParams, params.getDefaults().isExclude(), generator);
         generator.writeEndArray();
       }
 
@@ -428,6 +430,11 @@ public class DefaultMetadataExportService implements MetadataExportService {
     if (parameters.containsKey("skipSharing")) {
       params.setSkipSharing(Boolean.parseBoolean(parameters.get("skipSharing").get(0)));
       parameters.remove("skipSharing");
+    }
+
+    if (parameters.containsKey("defaults")) {
+      params.setDefaults(Defaults.valueOf(parameters.get("defaults").get(0)));
+      parameters.remove("defaults");
     }
 
     for (String parameterKey : parameters.keySet()) {
@@ -889,9 +896,7 @@ public class DefaultMetadataExportService implements MetadataExportService {
           SetMap<Class<? extends IdentifiableObject>, IdentifiableObject> metadata,
           ProgramTrackedEntityAttribute programTrackedEntityAttribute) {
     if (programTrackedEntityAttribute == null) return metadata;
-    metadata.putValue(ProgramTrackedEntityAttribute.class, programTrackedEntityAttribute);
     handleAttributes(metadata, programTrackedEntityAttribute);
-
     handleTrackedEntityAttribute(metadata, programTrackedEntityAttribute.getAttribute());
 
     return metadata;
@@ -950,7 +955,6 @@ public class DefaultMetadataExportService implements MetadataExportService {
           SetMap<Class<? extends IdentifiableObject>, IdentifiableObject> metadata,
           ProgramStageDataElement programStageDataElement) {
     if (programStageDataElement == null) return metadata;
-    metadata.putValue(ProgramStageDataElement.class, programStageDataElement);
 
     handleAttributes(metadata, programStageDataElement);
     handleDataElement(metadata, programStageDataElement.getDataElement());

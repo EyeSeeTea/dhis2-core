@@ -56,7 +56,7 @@ class DataIntegrityYamlReaderTest {
 
     List<DataIntegrityCheck> checks = new ArrayList<>();
     readYaml(checks, "data-integrity-checks.yaml", "data-integrity-checks", CLASS_PATH);
-    assertEquals(63, checks.size());
+    assertEquals(67, checks.size());
 
     // Names should be unique
     List<String> allNames = checks.stream().map(DataIntegrityCheck::getName).collect(toList());
@@ -75,6 +75,11 @@ class DataIntegrityYamlReaderTest {
     List<String> codeList =
         checks.stream().map(DataIntegrityCheck::getCode).sorted().collect(toList());
     assertEquals(codeList.size(), Set.copyOf(codeList).size());
+
+    // Assert that all the descriptions are unique.
+    List<String> nameList =
+        checks.stream().map(DataIntegrityCheck::getDescription).sorted().collect(toList());
+    assertEquals(nameList.size(), Set.copyOf(nameList).size());
 
     // Assert that codes consist of upper case letter and numbers only
     String regEx = "^[A-Z0-9]+$";

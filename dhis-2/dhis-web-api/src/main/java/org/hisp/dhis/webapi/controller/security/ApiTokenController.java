@@ -40,8 +40,8 @@ import org.apache.commons.validator.routines.InetAddressValidator;
 import org.apache.commons.validator.routines.UrlValidator;
 import org.hisp.dhis.common.DhisApiVersion;
 import org.hisp.dhis.common.OpenApi;
+import org.hisp.dhis.dxf2.common.ImportReportMode;
 import org.hisp.dhis.dxf2.metadata.MetadataImportParams;
-import org.hisp.dhis.dxf2.metadata.feedback.ImportReportMode;
 import org.hisp.dhis.dxf2.webmessage.WebMessage;
 import org.hisp.dhis.feedback.ObjectReport;
 import org.hisp.dhis.feedback.Status;
@@ -75,7 +75,7 @@ public class ApiTokenController extends AbstractCrudController<ApiToken> {
       "Operation not supported on ApiToken";
 
   private static final List<String> VALID_METHODS =
-      List.of("GET", "POST", "PATCH", "PUT", "DELETE");
+      List.of("HEAD", "GET", "POST", "PATCH", "PUT", "DELETE");
 
   private final ApiTokenService apiTokenService;
 
@@ -145,7 +145,7 @@ public class ApiTokenController extends AbstractCrudController<ApiToken> {
     // Continue POST import as usual
     MetadataImportParams params =
         importService
-            .getParamsFromMap(contextService.getParameterValuesMap())
+            .getParamsFromMap(Map.of())
             .setImportReportMode(ImportReportMode.FULL)
             .setUser(user)
             .setImportStrategy(ImportStrategy.CREATE)

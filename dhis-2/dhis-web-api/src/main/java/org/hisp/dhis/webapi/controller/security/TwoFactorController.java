@@ -109,12 +109,13 @@ public class TwoFactorController {
 
     defaultUserService.generateTwoFactorOtpSecretForApproval(currentUser);
 
-    String appName = systemSettingManager.getStringSetting(SettingKey.APPLICATION_TITLE);
-
     List<ErrorCode> errorCodes = new ArrayList<>();
 
     String qrContent =
-        TwoFactoryAuthenticationUtils.generateQrContent(appName, currentUser, errorCodes::add);
+        TwoFactoryAuthenticationUtils.generateQrContent(
+            systemSettingManager.getStringSetting(SettingKey.APPLICATION_TITLE),
+            currentUser,
+            errorCodes::add);
 
     if (!errorCodes.isEmpty()) {
       throw new WebMessageException(conflict(errorCodes.get(0).getMessage(), errorCodes.get(0)));
@@ -193,7 +194,12 @@ public class TwoFactorController {
       throw new WebMessageException(conflict(ErrorCode.E3031.getMessage(), ErrorCode.E3031));
     }
 
+    if (defaultUserService.twoFaDisableIsLocked(currentUser.getUsername())) {
+      throw new WebMessageException(conflict(ErrorCode.E3042.getMessage(), ErrorCode.E3042));
+    }
+
     if (!verifyCode(code, currentUser)) {
+      defaultUserService.registerFailed2FADisableAttempt(currentUser.getUsername());
       return unauthorized(ErrorCode.E3023.getMessage());
     }
 

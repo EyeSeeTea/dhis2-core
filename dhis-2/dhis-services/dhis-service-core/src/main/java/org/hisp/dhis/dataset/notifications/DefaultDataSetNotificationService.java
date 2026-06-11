@@ -44,6 +44,7 @@ import java.util.Map.Entry;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -435,8 +436,11 @@ public class DefaultDataSetNotificationService implements DataSetNotificationSer
 
   private Set<User> resolveInternalRecipients(DataSetNotificationTemplate template) {
     UserGroup userGroup = template.getRecipientUserGroup();
-
-    return userGroup == null ? Set.of() : userGroup.getMembers();
+    return userGroup == null
+        ? Set.of()
+        : userGroup.getMembers().stream()
+            .filter(user -> !user.isDisabled())
+            .collect(Collectors.toSet());
   }
 
   private Set<User> resolveInternalRecipients(
@@ -450,8 +454,10 @@ public class DefaultDataSetNotificationService implements DataSetNotificationSer
     return userGroup.getMembers().stream()
         .filter(
             user ->
-                organisationUnitService.isInUserHierarchy(
-                    registration.getSource().getUid(), user.getOrganisationUnits()))
+                user != null
+                    && !user.isDisabled()
+                    && organisationUnitService.isInUserHierarchy(
+                        registration.getSource().getUid(), user.getOrganisationUnits()))
         .collect(toSet());
   }
 
@@ -459,6 +465,11 @@ public class DefaultDataSetNotificationService implements DataSetNotificationSer
       String type, List<DhisMessage> messages, JobProgress progress) {
     progress.startingStage(
         "Dispatching DHIS " + type + " notification messages", messages.size(), SKIP_ITEM_OUTLIER);
+
+    // filter out messages without recipients
+    messages =
+        messages.stream().filter(msg -> !msg.recipients.isEmpty()).collect(Collectors.toList());
+
     progress.runStage(
         messages,
         msg -> msg.message.getSubject(),

@@ -32,7 +32,9 @@ import static java.lang.String.format;
 import static java.time.ZoneId.systemDefault;
 import static java.util.stream.Collectors.toMap;
 
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -63,6 +65,7 @@ import org.hibernate.annotations.QueryHints;
 import org.hibernate.query.Query;
 import org.hisp.dhis.cache.QueryCacheManager;
 import org.hisp.dhis.common.IdentifiableObjectUtils;
+import org.hisp.dhis.common.UID;
 import org.hisp.dhis.common.UserOrgUnitType;
 import org.hisp.dhis.common.hibernate.HibernateIdentifiableObjectStore;
 import org.hisp.dhis.commons.collection.CollectionUtils;
@@ -80,6 +83,7 @@ import org.hisp.dhis.user.CurrentUserService;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserAccountExpiryInfo;
 import org.hisp.dhis.user.UserInvitationStatus;
+import org.hisp.dhis.user.UserOrgUnitProperty;
 import org.hisp.dhis.user.UserQueryParams;
 import org.hisp.dhis.user.UserStore;
 import org.springframework.context.ApplicationEventPublisher;
@@ -529,7 +533,9 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
   @Override
   @CheckForNull
   public User getUserByOpenId(@Nonnull String openId) {
-    Query<User> query = getQuery("from User u where u.openId = :openId order by u.lastLogin desc");
+    Query<User> query =
+        getQuery(
+            "from User u where u.disabled = false and u.openId = :openId order by coalesce(u.lastLogin,'0001-01-01') desc");
     query.setParameter("openId", openId);
     List<User> list = query.getResultList();
     return list.isEmpty() ? null : list.get(0);
@@ -583,6 +589,26 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
   }
 
   @Override
+  public void setActiveLinkedAccounts(
+      @Nonnull String actingUsername, @Nonnull String activeUsername) {
+
+    User actionUser = getUserByUsername(actingUsername, false);
+    Instant now = Instant.now();
+    Instant oneHourAgo = now.minus(1, ChronoUnit.HOURS);
+    Instant oneHourInTheFuture = now.plus(1, ChronoUnit.HOURS);
+
+    List<User> linkedUserAccounts = getLinkedUserAccounts(actionUser);
+    for (User user : linkedUserAccounts) {
+      user.setLastLogin(
+          user.getUsername().equals(activeUsername)
+              ? Date.from(oneHourInTheFuture)
+              : Date.from(oneHourAgo));
+
+      update(user);
+    }
+  }
+
+  @Override
   public List<User> getUserByUsernames(Collection<String> usernames) {
     if (usernames == null || usernames.isEmpty()) {
       return new ArrayList<>();
@@ -592,5 +618,16 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
     query.setParameter("usernames", usernames);
 
     return query.getResultList();
+  }
+
+  @Override
+  public List<User> getUsersWithOrgUnits(
+      @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull Set<UID> uids) {
+    return getQuery(
+            String.format(
+                "select distinct u from User u left join fetch u.%s ous where ous.uid in :uids ",
+                orgUnitProperty.getValue()))
+        .setParameter("uids", UID.toValueList(uids))
+        .getResultList();
   }
 }

@@ -28,8 +28,8 @@
 package org.hisp.dhis.trackedentity;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static org.hisp.dhis.external.conf.ConfigurationKey.CHANGELOG_TRACKER;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -39,20 +39,21 @@ import org.hibernate.Hibernate;
 import org.hisp.dhis.cache.Cache;
 import org.hisp.dhis.cache.CacheProvider;
 import org.hisp.dhis.dxf2.events.event.EventContext;
-import org.hisp.dhis.external.conf.DhisConfigurationProvider;
+import org.hisp.dhis.feedback.ForbiddenException;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.organisationunit.OrganisationUnitService;
 import org.hisp.dhis.program.Program;
 import org.hisp.dhis.program.ProgramOwnershipHistory;
 import org.hisp.dhis.program.ProgramOwnershipHistoryService;
+import org.hisp.dhis.program.ProgramService;
 import org.hisp.dhis.program.ProgramTempOwner;
 import org.hisp.dhis.program.ProgramTempOwnerService;
 import org.hisp.dhis.program.ProgramTempOwnershipAudit;
 import org.hisp.dhis.program.ProgramTempOwnershipAuditService;
 import org.hisp.dhis.program.ProgramType;
+import org.hisp.dhis.security.acl.AclService;
 import org.hisp.dhis.user.CurrentUserService;
 import org.hisp.dhis.user.User;
-import org.springframework.core.env.Environment;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -81,9 +82,11 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
 
   private final OrganisationUnitService organisationUnitService;
 
-  private final TrackedEntityInstanceService trackedEntityInstanceService;
+  private final ProgramService programService;
 
-  private final DhisConfigurationProvider config;
+  private final AclService aclService;
+
+  private final TrackedEntityInstanceService trackedEntityInstanceService;
 
   public DefaultTrackerOwnershipManager(
       CurrentUserService currentUserService,
@@ -94,8 +97,8 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
       ProgramOwnershipHistoryService programOwnershipHistoryService,
       TrackedEntityInstanceService trackedEntityInstanceService,
       OrganisationUnitService organisationUnitService,
-      DhisConfigurationProvider config,
-      Environment env) {
+      ProgramService programService,
+      AclService aclService) {
     checkNotNull(currentUserService);
     checkNotNull(trackedEntityProgramOwnerService);
     checkNotNull(cacheProvider);
@@ -103,8 +106,7 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
     checkNotNull(programTempOwnerService);
     checkNotNull(programOwnershipHistoryService);
     checkNotNull(organisationUnitService);
-    checkNotNull(config);
-    checkNotNull(env);
+    checkNotNull(aclService);
 
     this.currentUserService = currentUserService;
     this.trackedEntityProgramOwnerService = trackedEntityProgramOwnerService;
@@ -113,9 +115,10 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
     this.programTempOwnerService = programTempOwnerService;
     this.organisationUnitService = organisationUnitService;
     this.trackedEntityInstanceService = trackedEntityInstanceService;
-    this.config = config;
+    this.programService = programService;
     this.ownerCache = cacheProvider.createProgramOwnerCache();
     this.tempOwnerCache = cacheProvider.createProgramTempOwnerCache();
+    this.aclService = aclService;
   }
 
   /** Cache for storing recent ownership checks */
@@ -135,13 +138,21 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
       Program program,
       OrganisationUnit orgUnit,
       boolean skipAccessValidation,
-      boolean createIfNotExists) {
+      boolean createIfNotExists)
+      throws ForbiddenException {
     if (entityInstance == null || program == null || orgUnit == null) {
       return;
     }
 
     if (hasAccess(currentUserService.getCurrentUser(), entityInstance, program)
         || skipAccessValidation) {
+      if (!programService.hasOrgUnit(program, orgUnit)) {
+        throw new ForbiddenException(
+            String.format(
+                "The program %s is not associated to the org unit %s",
+                program.getUid(), orgUnit.getUid()));
+      }
+
       TrackedEntityProgramOwner teProgramOwner =
           trackedEntityProgramOwnerService.getTrackedEntityProgramOwner(
               entityInstance.getId(), program.getId());
@@ -163,8 +174,6 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
         trackedEntityProgramOwnerService.createTrackedEntityProgramOwner(
             entityInstance, program, orgUnit);
       }
-
-      ownerCache.invalidate(getOwnershipCacheKey(() -> entityInstance.getId(), program));
     } else {
       log.error("Unauthorized attempt to change ownership");
       throw new AccessDeniedException(
@@ -207,8 +216,6 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
         trackedEntityProgramOwnerService.createTrackedEntityProgramOwner(
             entityInstance, program, organisationUnit);
       }
-
-      ownerCache.invalidate(getOwnershipCacheKey(() -> entityInstance.getId(), program));
     } else {
       log.error("Unauthorized attempt to assign ownership");
       throw new AccessDeniedException(
@@ -219,23 +226,83 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
   @Override
   @Transactional
   public void grantTemporaryOwnership(
-      TrackedEntityInstance entityInstance, Program program, User user, String reason) {
-    if (canSkipOwnershipCheck(user, program) || entityInstance == null) {
-      return;
+      TrackedEntityInstance entityInstance, Program program, User user, String reason)
+      throws ForbiddenException {
+
+    validateGrantTemporaryOwnershipInputs(entityInstance, program, user);
+
+    if (entityInstance.getTrackedEntityType().isAllowAuditLog()) {
+      programTempOwnershipAuditService.addProgramTempOwnershipAudit(
+          new ProgramTempOwnershipAudit(program, entityInstance, reason, user.getUsername()));
     }
 
-    if (program.isProtected()) {
-      if (config.isEnabled(CHANGELOG_TRACKER)) {
-        programTempOwnershipAuditService.addProgramTempOwnershipAudit(
-            new ProgramTempOwnershipAudit(program, entityInstance, reason, user.getUsername()));
-      }
-      ProgramTempOwner programTempOwner =
-          new ProgramTempOwner(
-              program, entityInstance, reason, user, TEMPORARY_OWNERSHIP_VALIDITY_IN_HOURS);
-      programTempOwnerService.addProgramTempOwner(programTempOwner);
-      tempOwnerCache.invalidate(
-          getTempOwnershipCacheKey(entityInstance.getUid(), program.getUid(), user.getUid()));
+    ProgramTempOwner programTempOwner =
+        new ProgramTempOwner(
+            program, entityInstance, reason, user, TEMPORARY_OWNERSHIP_VALIDITY_IN_HOURS);
+    programTempOwnerService.addProgramTempOwner(programTempOwner);
+    tempOwnerCache.invalidate(
+        getTempOwnershipCacheKey(entityInstance.getUid(), program.getUid(), user.getUid()));
+  }
+
+  private void validateGrantTemporaryOwnershipInputs(
+      TrackedEntityInstance entityInstance, Program program, User user) throws ForbiddenException {
+    if (program == null) {
+      throw new ForbiddenException(
+          "Temporary ownership not created. Program supplied does not exist.");
     }
+
+    if (entityInstance == null) {
+      throw new ForbiddenException(
+          "Temporary ownership not created. Tracked entity supplied does not exist.");
+    }
+
+    if (user.isSuper()) {
+      throw new ForbiddenException("Temporary ownership not created. Current user is a superuser.");
+    }
+
+    if (ProgramType.WITHOUT_REGISTRATION == program.getProgramType()) {
+      throw new ForbiddenException(
+          "Temporary ownership not created. Program supplied is not a tracker program.");
+    }
+
+    if (!program.isProtected()) {
+      throw new ForbiddenException(
+          String.format(
+              "Temporary ownership not created. Temporary ownership can only be granted to protected programs. %s access level is %s.",
+              program.getUid(), program.getAccessLevel().name()));
+    }
+
+    if (!isOwnerInUserSearchScope(user, entityInstance, program)) {
+      throw new ForbiddenException(
+          "Temporary ownership not created. The owner of the entity-program combination is not in the user's search scope.");
+    }
+
+    if (!aclService.canDataRead(user, program)) {
+      throw new ForbiddenException(
+          "Temporary ownership not created. User has no data read access to program: "
+              + program.getUid());
+    }
+
+    if (!aclService.canDataRead(user, entityInstance.getTrackedEntityType())) {
+      throw new ForbiddenException(
+          "Temporary ownership not created. User has no data read access to tracked entity type: "
+              + entityInstance.getTrackedEntityType().getUid());
+    }
+
+    if (!Objects.equals(
+        program.getTrackedEntityType().getUid(), entityInstance.getTrackedEntityType().getUid())) {
+      throw new ForbiddenException(
+          String.format(
+              "Temporary ownership not created. The tracked entity type of the program %s differs from that of the tracked entity %s.",
+              program.getTrackedEntityType().getUid(),
+              entityInstance.getTrackedEntityType().getUid()));
+    }
+  }
+
+  private boolean isOwnerInUserSearchScope(
+      User user, TrackedEntityInstance trackedEntity, Program program) {
+    return organisationUnitService.isInUserSearchHierarchyCached(
+        user, getOwner(trackedEntity.getId(), program, trackedEntity::getOrganisationUnit));
   }
 
   @Override

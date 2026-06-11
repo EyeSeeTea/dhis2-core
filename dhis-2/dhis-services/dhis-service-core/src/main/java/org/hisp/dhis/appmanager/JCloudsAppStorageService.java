@@ -27,60 +27,48 @@
  */
 package org.hisp.dhis.appmanager;
 
+import static org.hisp.dhis.util.ZipFileUtils.getFullFilePath;
 import static org.jclouds.blobstore.options.ListContainerOptions.Builder.prefix;
 
-import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
+import java.net.MalformedURLException;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Properties;
 import java.util.function.Consumer;
-import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
+import javax.annotation.Nonnull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.lang3.tuple.Pair;
+import org.hisp.dhis.appmanager.ResourceResult.Redirect;
+import org.hisp.dhis.appmanager.ResourceResult.ResourceFound;
+import org.hisp.dhis.appmanager.ResourceResult.ResourceNotFound;
 import org.hisp.dhis.cache.Cache;
-import org.hisp.dhis.commons.util.DebugUtils;
-import org.hisp.dhis.external.conf.ConfigurationKey;
-import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.external.location.LocationManager;
-import org.hisp.dhis.external.location.LocationManagerException;
+import org.hisp.dhis.fileresource.FileResourceContentStore;
+import org.hisp.dhis.jclouds.JCloudsStore;
+import org.hisp.dhis.util.ZipBombException;
 import org.hisp.dhis.util.ZipFileUtils;
-import org.jclouds.ContextBuilder;
-import org.jclouds.blobstore.BlobRequestSigner;
-import org.jclouds.blobstore.BlobStore;
-import org.jclouds.blobstore.BlobStoreContext;
-import org.jclouds.blobstore.LocalBlobRequestSigner;
+import org.hisp.dhis.util.ZipSlipException;
 import org.jclouds.blobstore.domain.Blob;
 import org.jclouds.blobstore.domain.StorageMetadata;
-import org.jclouds.blobstore.internal.RequestSigningUnsupported;
-import org.jclouds.domain.Credentials;
-import org.jclouds.domain.Location;
-import org.jclouds.domain.LocationBuilder;
-import org.jclouds.domain.LocationScope;
-import org.jclouds.filesystem.reference.FilesystemConstants;
-import org.jclouds.http.HttpRequest;
-import org.jclouds.http.HttpResponseException;
-import org.jclouds.rest.AuthorizationException;
-import org.jclouds.s3.reference.S3Constants;
+import org.jclouds.blobstore.options.ListContainerOptions;
 import org.joda.time.Minutes;
 import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 /**
  * @author Stian Sandvold
@@ -89,109 +77,15 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 @Service("org.hisp.dhis.appmanager.JCloudsAppStorageService")
 public class JCloudsAppStorageService implements AppStorageService {
-  private static final Pattern CONTAINER_NAME_PATTERN =
-      Pattern.compile("^(?![.-])(?=.{1,63})([.-]?[a-zA-Z0-9]+)+$");
-
   private static final long FIVE_MINUTES_IN_SECONDS =
       Minutes.minutes(5).toStandardDuration().getStandardSeconds();
 
-  private BlobStore blobStore;
-
-  private BlobStoreContext blobStoreContext;
-
-  private BlobStoreProperties config;
-
-  // -------------------------------------------------------------------------
-  // Providers
-  // -------------------------------------------------------------------------
-
-  private static final String JCLOUDS_PROVIDER_KEY_FILESYSTEM = "filesystem";
-
-  private static final String JCLOUDS_PROVIDER_KEY_AWS_S3 = "aws-s3";
-
-  private static final String JCLOUDS_PROVIDER_KEY_TRANSIENT = "transient";
-
-  private static final List<String> SUPPORTED_PROVIDERS =
-      List.of(
-          JCLOUDS_PROVIDER_KEY_FILESYSTEM,
-          JCLOUDS_PROVIDER_KEY_AWS_S3,
-          JCLOUDS_PROVIDER_KEY_TRANSIENT);
-
-  // -------------------------------------------------------------------------
-  // Dependencies
-  // -------------------------------------------------------------------------
+  private final JCloudsStore jCloudsStore;
 
   private final LocationManager locationManager;
 
-  private final DhisConfigurationProvider configurationProvider;
-
   private final ObjectMapper jsonMapper;
-
-  @PostConstruct
-  public void init() {
-    // ---------------------------------------------------------------------
-    // Bootstrap config
-    // ---------------------------------------------------------------------
-
-    config =
-        new BlobStoreProperties(
-            configurationProvider.getProperty(ConfigurationKey.FILESTORE_PROVIDER),
-            configurationProvider.getProperty(ConfigurationKey.FILESTORE_LOCATION),
-            configurationProvider.getProperty(ConfigurationKey.FILESTORE_CONTAINER));
-
-    Pair<Credentials, Properties> providerConfig =
-        configureForProvider(
-            config.provider,
-            configurationProvider.getProperty(ConfigurationKey.FILESTORE_IDENTITY),
-            configurationProvider.getProperty(ConfigurationKey.FILESTORE_SECRET));
-
-    // ---------------------------------------------------------------------
-    // Set up JClouds context
-    // ---------------------------------------------------------------------
-
-    blobStoreContext =
-        ContextBuilder.newBuilder(config.provider)
-            .credentials(providerConfig.getLeft().identity, providerConfig.getLeft().credential)
-            .overrides(providerConfig.getRight())
-            .build(BlobStoreContext.class);
-
-    blobStore = blobStoreContext.getBlobStore();
-
-    Location provider =
-        new LocationBuilder()
-            .scope(LocationScope.PROVIDER)
-            .id(config.provider)
-            .description(config.provider)
-            .build();
-
-    try {
-      blobStore.createContainerInLocation(createRegionLocation(config, provider), config.container);
-
-      log.info(
-          String.format(
-              "File store configured with provider: '%s', container: '%s' and location: '%s'.",
-              config.provider, config.container, config.location));
-    } catch (HttpResponseException ex) {
-      log.error(
-          String.format(
-              "Could not configure file store with provider '%s' and container '%s'.\n"
-                  + "File storage will not be available.",
-              config.provider, config.container),
-          ex);
-    } catch (AuthorizationException ex) {
-      log.error(
-          String.format(
-              "Could not authenticate with file store provider '%s' and container '%s'. "
-                  + "File storage will not be available.",
-              config.provider, config.location),
-          ex);
-    }
-  }
-
-  @PreDestroy
-  public void cleanUp() {
-    blobStoreContext.close();
-  }
+  private final FileResourceContentStore fileResourceContentStore;
 
   private void discoverInstalledApps(Consumer<App> handler) {
     ObjectMapper mapper = new ObjectMapper();
@@ -199,14 +93,14 @@ public class JCloudsAppStorageService implements AppStorageService {
 
     log.info("Starting JClouds discovery");
     for (StorageMetadata resource :
-        blobStore.list(config.container, prefix(APPS_DIR + "/").delimiter("/"))) {
-      log.info("Found potential app: " + resource.getName());
+        jCloudsStore.getBlobList(prefix(APPS_DIR + "/").delimiter("/"))) {
+      log.info("Found potential app: {}", resource.getName());
 
       // Found potential app
-      Blob manifest = blobStore.getBlob(config.container, resource.getName() + "manifest.webapp");
+      Blob manifest = jCloudsStore.getBlob(resource.getName() + "manifest.webapp");
 
       if (manifest == null) {
-        log.warn("Could not find manifest file of " + resource.getName());
+        log.warn("Could not find manifest file of {}", resource.getName());
         continue;
       }
 
@@ -221,7 +115,6 @@ public class JCloudsAppStorageService implements AppStorageService {
         handler.accept(app);
       } catch (IOException ex) {
         log.error("Could not read manifest file of " + resource.getName(), ex);
-        log.error(DebugUtils.getStackTrace(ex));
       }
     }
   }
@@ -230,12 +123,14 @@ public class JCloudsAppStorageService implements AppStorageService {
   public Map<String, App> discoverInstalledApps() {
     Map<String, App> apps = new HashMap<>();
     discoverInstalledApps(app -> apps.put(app.getUrlFriendlyName(), app));
+
     if (apps.isEmpty()) {
       log.info("No apps found during JClouds discovery.");
     } else {
       apps.values()
-          .forEach(app -> log.info("Discovered app '" + app.getName() + "' from JClouds storage "));
+          .forEach(app -> log.info("Discovered app '{}' from JClouds storage ", app.getName()));
     }
+
     return apps;
   }
 
@@ -277,319 +172,200 @@ public class JCloudsAppStorageService implements AppStorageService {
       }
     }
 
-    // -----------------------------------------------------------------
-    // Check that, iff this is a bundled app, it is configured as a core app
-    // -----------------------------------------------------------------
-
-    if (app.isBundled() != app.isCoreApp()) {
-      if (app.isBundled()) {
-        log.error(
-            String.format(
-                "Failed to install app '%s': bundled app overrides muse be declared with core_app=true",
-                app.getShortName()));
-        app.setAppState(AppStatus.INVALID_BUNDLED_APP_OVERRIDE);
-      } else {
-        log.error(
-            String.format(
-                "Failed to install app '%s': apps declared with core_app=true must override a bundled app",
-                app.getShortName()));
-        app.setAppState(AppStatus.INVALID_CORE_APP);
-      }
-
-      return false;
-    }
     return true;
   }
 
   @Override
   public App installApp(File file, String filename, Cache<App> appCache) {
-    App app = new App();
-    log.info("Installing new app: " + filename);
+    log.info("Installing new app: {}", filename);
+    String installationFolder =
+        APPS_DIR + File.separator + filename.substring(0, filename.lastIndexOf('.'));
 
-    try (ZipFile zip = new ZipFile(file)) {
-      // -----------------------------------------------------------------
-      // Determine top-level directory name, if the zip file contains one
-      // -----------------------------------------------------------------
-
-      String prefix = ZipFileUtils.getTopLevelDirectory(zip.entries().asIterator());
-      log.debug("Detected top-level directory '" + prefix + "' in zip");
-
-      // -----------------------------------------------------------------
-      // Parse manifest.webapp file from ZIP archive.
-      // -----------------------------------------------------------------
-
-      ZipEntry entry = zip.getEntry(prefix + MANIFEST_FILENAME);
-
-      if (entry == null) {
-        log.error("Failed to install app: Missing manifest.webapp in zip");
-
-        app.setAppState(AppStatus.MISSING_MANIFEST);
-        return app;
-      }
-
-      InputStream inputStream = zip.getInputStream(entry);
-
-      app = jsonMapper.readValue(inputStream, App.class);
-
-      app.setFolderName(
-          APPS_DIR + File.separator + filename.substring(0, filename.lastIndexOf('.')));
+    App app;
+    String topLevelFolder;
+    try {
+      topLevelFolder = ZipFileUtils.getTopLevelFolder(file);
+      app = ZipFileUtils.readManifest(file, this.jsonMapper, topLevelFolder);
+      app.setFolderName(installationFolder);
       app.setAppStorageSource(AppStorageSource.JCLOUDS);
+    } catch (IOException e) {
+      log.error("Failed to install app: Missing manifest.webapp in zip");
+      app = new App();
+      app.setAppState(AppStatus.MISSING_MANIFEST);
+      return app;
+    }
 
-      if (!this.validateApp(app, appCache)) {
+    try {
+      ZipFileUtils.validateZip(file, installationFolder, topLevelFolder);
+
+      if (!validateApp(app, appCache)) {
+        log.error("Failed to install app: App validation failed");
         return app;
       }
 
-      // -----------------------------------------------------------------
-      // Unzip the app
-      // -----------------------------------------------------------------
+      try (ZipFile zipFile = new ZipFile(file)) {
+        Enumeration<? extends ZipEntry> entries = zipFile.entries();
+        while (entries.hasMoreElements()) {
+          ZipEntry zipEntry = entries.nextElement();
+          String filePath = getFullFilePath(topLevelFolder, installationFolder, zipEntry);
+          // If it's the root folder, skip
+          if (filePath == null) {
+            continue;
+          }
 
-      String dest = APPS_DIR + File.separator + filename.substring(0, filename.lastIndexOf('.'));
-
-      zip.stream()
-          .forEach(
-              (Consumer<ZipEntry>)
-                  zipEntry -> {
-                    log.debug("Uploading zipEntry: " + zipEntry);
-                    String name = zipEntry.getName().substring(prefix.length());
-
-                    try {
-                      InputStream input = zip.getInputStream(zipEntry);
-
-                      Blob blob =
-                          blobStore
-                              .blobBuilder(dest + File.separator + name)
-                              .payload(input)
-                              .contentLength(zipEntry.getSize())
-                              .build();
-
-                      blobStore.putBlob(config.container, blob);
-
-                      input.close();
-
-                    } catch (IOException e) {
-                      log.error("Unable to store app file '" + name + "'", e);
-                    }
-                  });
-
-      // make sure any other version of same app is removed
-      List<App> otherVersions = new ArrayList<>();
-      String key = app.getKey();
-      String version = app.getVersion();
-      discoverInstalledApps(
-          other -> {
-            if (key.equals(other.getKey()) && !version.equals(other.getVersion()))
-              otherVersions.add(other);
-          });
-      otherVersions.forEach(this::deleteApp);
-
-      String namespace = app.getActivities().getDhis().getNamespace();
-
-      log.info(
-          String.format(
-              ""
-                  + "New app '%s' installed"
-                  + "\n\tInstall path: %s"
-                  + (namespace != null && !namespace.isEmpty() ? "\n\tNamespace reserved: %s" : ""),
-              app.getName(),
-              dest,
-              namespace));
-
-      // -----------------------------------------------------------------
-      // Installation complete.
-      // -----------------------------------------------------------------
+          try (InputStream zipInputStream = zipFile.getInputStream(zipEntry)) {
+            Blob blob =
+                jCloudsStore
+                    .getBlobStore()
+                    .blobBuilder(filePath)
+                    .payload(zipInputStream)
+                    .contentLength(zipEntry.getSize())
+                    .build();
+            jCloudsStore.putBlob(blob);
+          }
+        }
+      }
 
       app.setAppState(AppStatus.OK);
 
-      return app;
-    } catch (ZipException e) {
-      log.error("Failed to install app: Invalid ZIP format", e);
-      app.setAppState(AppStatus.INVALID_ZIP_FORMAT);
-    } catch (JsonParseException e) {
-      log.error("Failed to install app: Invalid manifest.webapp", e);
-      app.setAppState(AppStatus.INVALID_MANIFEST_JSON);
     } catch (IOException e) {
-      log.error("Failed to install app: Could not save app", e);
-      app.setAppState(AppStatus.INSTALLATION_FAILED);
+      log.error("Failed to install app: IO Failure during unzipping", e);
+      app.setAppState(AppStatus.INVALID_ZIP_FORMAT);
+    } catch (ZipBombException e) {
+      log.error("Failed to install app: Possible ZipBomb detected", e);
+      app.setAppState(AppStatus.INVALID_ZIP_FORMAT);
+    } catch (ZipSlipException e) {
+      log.error("Failed to install app: Possible ZipSlip detected", e);
+      app.setAppState(AppStatus.INVALID_ZIP_FORMAT);
     }
 
+    if (!app.getAppState().ok()) {
+      deleteApp(app);
+      return app;
+    }
+
+    removePreviousVersions(app);
+    logSuccess(app, installationFolder);
     return app;
+  }
+
+  private static void logSuccess(App app, String appFolder) {
+    String namespace = app.getActivities().getDhis().getNamespace();
+    log.info(
+        "New app {} installed, Install path: {}, Namespace reserved: {}",
+        app.getName(),
+        appFolder,
+        (namespace != null && !namespace.isEmpty() ? namespace : "no namespace reserved"));
+  }
+
+  private void removePreviousVersions(App app) {
+    List<App> otherVersions = new ArrayList<>();
+    String key = app.getKey();
+    String version = app.getVersion();
+    discoverInstalledApps(
+        other -> {
+          if (key.equals(other.getKey()) && !version.equals(other.getVersion()))
+            otherVersions.add(other);
+        });
+    otherVersions.forEach(this::deleteApp);
   }
 
   @Override
   public void deleteApp(App app) {
-    log.info("Deleting app " + app.getName());
+    log.info("Deleting app {}", app.getName());
 
-    // Delete all files related to app
-    // fast but deprecated (works for local filestore):
-    blobStore.deleteDirectory(config.container, app.getFolderName());
-
-    // slower but works for S3:
-    // delete the manifest file first in case the system crashes during deletion
-    // and the manifest file is not deleted, resulting in an app that can't be installed
-    blobStore.removeBlob(config.container, app.getFolderName() + "/manifest.webapp");
-
-    // Delete all files related to app
-    for (StorageMetadata resource :
-        blobStore.list(config.container, prefix(app.getFolderName()).recursive())) {
-      log.debug("Deleting app file: " + resource.getName());
-
-      blobStore.removeBlob(config.container, resource.getName());
+    if (jCloudsStore.isUsingFileSystem()) {
+      // Delete all files related to app (works for local filestore):
+      jCloudsStore.deleteDirectory(app.getFolderName());
+    } else {
+      // slower but works for S3:
+      // delete the manifest file first in case the system crashes during deletion
+      // and the manifest file is not deleted, resulting in an app that can't be installed
+      jCloudsStore.removeBlob(app.getFolderName() + "manifest.webapp");
+      // Delete all files related to app
+      ListContainerOptions options = prefix(app.getFolderName()).recursive();
+      for (StorageMetadata resource : jCloudsStore.getBlobList(options)) {
+        log.debug("Deleting app file: {}", resource.getName());
+        jCloudsStore.removeBlob(resource.getName());
+      }
     }
-
-    log.info("Deleted app " + app.getName());
+    log.info("Deleted app {}", app.getName());
   }
 
   @Override
-  public Resource getAppResource(App app, String pageName) throws IOException {
+  public ResourceResult getAppResource(App app, @Nonnull String resource) throws IOException {
     if (app == null || !app.getAppStorageSource().equals(AppStorageSource.JCLOUDS)) {
       log.warn(
-          "Can't look up resource "
-              + pageName
-              + ". The specified app was not found in JClouds storage.");
-      return null;
+          "Can't look up resource {}. The specified app was not found in JClouds storage.",
+          resource);
+      return new ResourceNotFound(resource);
+    }
+    if (resource.isBlank()) {
+      return new Redirect("/");
     }
 
-    String key = (app.getFolderName() + ("/" + pageName)).replaceAll("//", "/");
-    URI uri = getSignedGetContentUri(key);
+    String resolvedFileResource = useIndexHtmlIfDirCall(resource);
+    String key = app.getFolderName() + ("/" + resolvedFileResource);
+    String cleanedKey = key.replaceAll("/+", "/");
 
-    if (uri == null) {
-
-      String filepath =
-          configurationProvider.getProperty(ConfigurationKey.FILESTORE_CONTAINER) + "/" + key;
-      filepath = filepath.replaceAll("//", "/");
-      File res;
-
-      try {
-        res = locationManager.getFileForReading(filepath);
-      } catch (LocationManagerException e) {
-        return null;
-      }
-
-      if (res.isDirectory()) {
-        String indexPath = pageName.replaceAll("/+$", "") + "/index.html";
-        log.info(
-            "Resource " + pageName + " (" + filepath + " is a directory, serving " + indexPath);
-        return getAppResource(app, indexPath);
-      } else if (res.exists()) {
-        return new FileSystemResource(res);
-      } else {
-        return null;
-      }
+    log.debug("Checking if blob exists {} for App {}", cleanedKey, app.getName());
+    if (jCloudsStore.blobExists(cleanedKey)) {
+      return new ResourceFound(getResource(cleanedKey));
     }
-
-    return new UrlResource(uri);
+    if (keyExistsAsDirectory(cleanedKey)) {
+      return new Redirect(resource + "/");
+    }
+    log.debug("ResourceNotFound {} for App {}", cleanedKey, app.getName());
+    return new ResourceNotFound(resource);
   }
 
-  private static Location createRegionLocation(BlobStoreProperties config, Location provider) {
-    return config.location != null
-        ? new LocationBuilder()
-            .scope(LocationScope.REGION)
-            .id(config.location)
-            .description(config.location)
-            .parent(provider)
-            .build()
-        : null;
+  private boolean keyExistsAsDirectory(String cleanedKey) {
+    return !jCloudsStore.getBlobList(prefix(cleanedKey)).isEmpty();
   }
 
-  private Pair<Credentials, Properties> configureForProvider(
-      String provider, String identity, String secret) {
-    Properties overrides = new Properties();
-    Credentials credentials = new Credentials("Unused", "Unused");
-
-    if (provider.equals(JCLOUDS_PROVIDER_KEY_FILESYSTEM)
-        && locationManager.externalDirectorySet()) {
-      overrides.setProperty(
-          FilesystemConstants.PROPERTY_BASEDIR, locationManager.getExternalDirectoryPath());
-    } else if (provider.equals(JCLOUDS_PROVIDER_KEY_AWS_S3)) {
-      credentials = new Credentials(identity, secret);
-      overrides.setProperty(S3Constants.PROPERTY_S3_VIRTUAL_HOST_BUCKETS, "false");
-
-      if (credentials.identity.isEmpty() || credentials.credential.isEmpty()) {
-        log.warn("AWS S3 store configured without credentials, authentication not possible.");
-      }
-    }
-
-    return Pair.of(credentials, overrides);
-  }
-
-  // -------------------------------------------------------------------------
-  // Internal classes
-  // -------------------------------------------------------------------------
-
-  private class BlobStoreProperties {
-    private String provider;
-
-    private String location;
-
-    private String container;
-
-    BlobStoreProperties(String provider, String location, String container) {
-      this.provider = provider;
-      this.location = location;
-      this.container = container;
-
-      validate();
-      validateAndSelectProvider();
-    }
-
-    private void validate() {
-      if (!isValidContainerName(container)) {
-        if (container != null) {
-          log.warn(
-              String.format(
-                  "Container name '%s' is illegal. "
-                      + "Standard domain name naming conventions apply (no underscores allowed). "
-                      + "Using default container name ' %s'",
-                  container, ConfigurationKey.FILESTORE_CONTAINER.getDefaultValue()));
+  private Resource getResource(@Nonnull String filePath) throws MalformedURLException {
+    if (jCloudsStore.isUsingFileSystem()) {
+      String cleanedFilepath = jCloudsStore.getBlobContainer() + "/" + filePath;
+      return new FileSystemResource(
+          locationManager.getFileForReading(cleanedFilepath.replaceAll("/+", "/")));
+    } else if (jCloudsStore.isUsingTransient()) {
+      return new InputStreamResource(fileResourceContentStore.getFileResourceContent(filePath)) {
+        @Override
+        public String getFilename() {
+          return StringUtils.getFilename(filePath);
         }
 
-        container = ConfigurationKey.FILESTORE_CONTAINER.getDefaultValue();
-      }
-    }
-
-    private boolean isValidContainerName(String containerName) {
-      return containerName != null && CONTAINER_NAME_PATTERN.matcher(containerName).matches();
-    }
-
-    private void validateAndSelectProvider() {
-      if (!SUPPORTED_PROVIDERS.contains(provider)) {
-        log.warn(
-            "Ignored unsupported file store provider '"
-                + provider
-                + "', using file system provider.");
-        provider = JCLOUDS_PROVIDER_KEY_FILESYSTEM;
-      }
-
-      if (provider.equals(JCLOUDS_PROVIDER_KEY_FILESYSTEM)
-          && !locationManager.externalDirectorySet()) {
-        log.info(
-            "File system file store provider could not be configured; external directory is not set. "
-                + "Falling back to in-memory provider.");
-        provider = JCLOUDS_PROVIDER_KEY_TRANSIENT;
-      }
+        @Override
+        public long lastModified() {
+          return new Date().getTime();
+        }
+      };
+    } else {
+      return new UrlResource(fileResourceContentStore.getSignedGetContentUri(filePath));
     }
   }
 
-  public URI getSignedGetContentUri(String key) {
-    BlobRequestSigner signer = blobStoreContext.getSigner();
-
-    if (!requestSigningSupported(signer)) {
-      return null;
+  /**
+   * The server is expected to return the 'index.html' for calls made to resources ending in '/'<br>
+   *
+   * <p>Examples: <br>
+   * <li>'' -> ''
+   * <li>'index.html' ->'index.html'
+   * <li>'subDir/index.html' ->'subDir/index.html'
+   * <li>'baseDir/' ->'baseDir/index.html'
+   * <li>'baseDir/subDir/' ->'baseDir/subDir/index.html'
+   * <li>'subDir' ->'subDir'
+   * <li>'static/js/138.af8b0ff6.chunk.js' ->'static/js/138.af8b0ff6.chunk.js'
+   *
+   * @param resource app resource to resolve
+   * @return potentially-updated app resource (file)
+   */
+  private String useIndexHtmlIfDirCall(@Nonnull String resource) {
+    if (resource.endsWith("/")) {
+      log.debug("Resource ends with '/', appending 'index.html' to {}", resource);
+      return resource + "index.html";
     }
-
-    HttpRequest httpRequest;
-
-    try {
-      httpRequest = signer.signGetBlob(config.container, key, FIVE_MINUTES_IN_SECONDS);
-    } catch (UnsupportedOperationException uoe) {
-      return null;
-    }
-
-    return httpRequest.getEndpoint();
-  }
-
-  private boolean requestSigningSupported(BlobRequestSigner signer) {
-    return !(signer instanceof RequestSigningUnsupported)
-        && !(signer instanceof LocalBlobRequestSigner);
+    // any other resource, no special handling required, return as is
+    return resource;
   }
 }

@@ -61,13 +61,13 @@ import org.hisp.dhis.dataset.DataSetService;
 import org.hisp.dhis.feedback.ConflictException;
 import org.hisp.dhis.feedback.NotFoundException;
 import org.hisp.dhis.fieldfiltering.FieldFilterService;
+import org.hisp.dhis.fieldfiltering.Preset;
 import org.hisp.dhis.fileresource.FileResource;
 import org.hisp.dhis.fileresource.FileResourceService;
 import org.hisp.dhis.interpretation.InterpretationService;
 import org.hisp.dhis.message.MessageService;
 import org.hisp.dhis.node.NodeService;
 import org.hisp.dhis.node.NodeUtils;
-import org.hisp.dhis.node.Preset;
 import org.hisp.dhis.node.types.CollectionNode;
 import org.hisp.dhis.node.types.RootNode;
 import org.hisp.dhis.node.types.SimpleNode;
@@ -83,6 +83,8 @@ import org.hisp.dhis.user.PasswordValidationResult;
 import org.hisp.dhis.user.PasswordValidationService;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserCredentialsDto;
+import org.hisp.dhis.user.UserGroup;
+import org.hisp.dhis.user.UserRole;
 import org.hisp.dhis.user.UserService;
 import org.hisp.dhis.user.UserSettingKey;
 import org.hisp.dhis.user.UserSettingService;
@@ -177,7 +179,19 @@ public class MeController {
             .map(BaseIdentifiableObject::getUid)
             .collect(Collectors.toList());
 
-    MeDto meDto = new MeDto(user, userSettings, programs, dataSets);
+    // Filter userGroups and userRoles based on ACL read access
+    Set<UserGroup> filteredUserGroups =
+        user.getGroups().stream()
+            .filter(group -> aclService.canRead(user, group))
+            .collect(Collectors.toSet());
+
+    Set<UserRole> filteredUserRoles =
+        user.getUserRoles().stream()
+            .filter(role -> aclService.canRead(user, role))
+            .collect(Collectors.toSet());
+
+    MeDto meDto =
+        new MeDto(user, userSettings, programs, dataSets, filteredUserGroups, filteredUserRoles);
     determineUserImpersonation(meDto);
 
     // TODO: To remove when we remove old UserCredentials compatibility
