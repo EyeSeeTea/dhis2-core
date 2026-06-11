@@ -34,10 +34,13 @@ import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import org.hisp.dhis.user.UserDetails;
 import org.hisp.dhis.webapi.controller.security.LoginResponse;
 import org.hisp.dhis.webapi.controller.security.TwoFactorSetupSessionAccess;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -96,7 +99,7 @@ public class TwoFactorSetupRestrictionFilter extends OncePerRequestFilter {
       HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
       throws ServletException, IOException {
     if (HttpMethod.OPTIONS.matches(request.getMethod())
-        || !TwoFactorSetupSessionAccess.isRequired(request)
+        || !isTwoFactorSetupRequired(request)
         || isAllowed(request)) {
       filterChain.doFilter(request, response);
       return;
@@ -115,6 +118,18 @@ public class TwoFactorSetupRestrictionFilter extends OncePerRequestFilter {
         LoginResponse.builder()
             .loginStatus(LoginResponse.STATUS.REQUIRES_TWO_FACTOR_ENROLMENT)
             .build());
+  }
+
+  private boolean isTwoFactorSetupRequired(HttpServletRequest request) {
+    if (TwoFactorSetupSessionAccess.isRequired(request)) {
+      return true;
+    }
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    if (authentication != null
+        && authentication.getPrincipal() instanceof UserDetails userDetails) {
+      return TwoFactorSetupSessionAccess.requiresTwoFactorEnrolment(userDetails);
+    }
+    return false;
   }
 
   private boolean isAllowed(HttpServletRequest request) {

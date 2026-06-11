@@ -50,6 +50,7 @@ import org.hisp.dhis.security.twofa.TwoFactorAuthService;
 import org.hisp.dhis.user.CurrentUser;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserDetails;
+import org.hisp.dhis.user.UserService;
 import org.hisp.dhis.webapi.mvc.annotation.ApiVersion;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -74,6 +75,7 @@ import org.springframework.web.bind.annotation.RestController;
 @AllArgsConstructor
 public class TwoFactorController {
   private final TwoFactorAuthService twoFactorAuthService;
+  private final UserService userService;
 
   @PostMapping(value = "/enrollTOTP2FA")
   @ResponseStatus(HttpStatus.OK)
@@ -182,6 +184,8 @@ public class TwoFactorController {
     }
     twoFactorAuthService.enable2FA(currentUser.getUsername(), code, currentUser);
     TwoFactorSetupSessionAccess.clear(request);
+    User freshUser = userService.getUserByUsername(currentUser.getUsername());
+    TwoFactorSetupSessionAccess.refreshSecurityContext(freshUser, request);
     return ok("2FA was enabled successfully");
   }
 

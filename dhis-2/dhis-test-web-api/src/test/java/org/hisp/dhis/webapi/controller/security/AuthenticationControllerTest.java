@@ -404,6 +404,31 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
     assertEquals("/dhis-web-login", redirectResponse.getRedirectedUrl());
   }
 
+  @Test
+  void testBasicAuthBlockedFor2FARestrictionUser() throws Exception {
+    User user = createUserWithAuth("basicauth2fa", "ALL");
+    UserRole role = user.getUserRoles().iterator().next();
+    role.setRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
+    userService.updateUserRole(role);
+
+    String basicAuth =
+        "Basic " + java.util.Base64.getEncoder().encodeToString("basicauth2fa:district".getBytes());
+
+    // API requests with Basic Auth should be blocked (403)
+    MockHttpServletResponse blockedResponse =
+        mvc.perform(get("/api/users").header("Authorization", basicAuth))
+            .andExpect(status().isForbidden())
+            .andReturn()
+            .getResponse();
+
+    Map<String, Object> blockedBody =
+        objectMapper.readValue(blockedResponse.getContentAsString(), Map.class);
+    assertEquals("REQUIRES_TWO_FACTOR_ENROLMENT", blockedBody.get("loginStatus"));
+
+    // Allowed endpoints should still work with Basic Auth
+    mvc.perform(get("/api/me").header("Authorization", basicAuth)).andExpect(status().isOk());
+  }
+
   private void loginWith2FACode(String code) {
     JsonLoginResponse ok2FaCodeResponse =
         POST(
