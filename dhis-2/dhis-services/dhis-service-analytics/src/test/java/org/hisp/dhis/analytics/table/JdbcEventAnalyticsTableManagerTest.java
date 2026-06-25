@@ -60,6 +60,7 @@ import static org.hisp.dhis.test.TestBase.createProgramStage;
 import static org.hisp.dhis.test.TestBase.createProgramTrackedEntityAttribute;
 import static org.hisp.dhis.test.TestBase.createTrackedEntityAttribute;
 import static org.hisp.dhis.test.TestBase.getDate;
+import static org.hisp.dhis.util.DateUtils.toLongDate;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.verify;
@@ -256,6 +257,42 @@ class JdbcEventAnalyticsTableManagerTest {
     assertThat(partitionB.isLatestPartition(), equalTo(true));
     assertThat(partitionB.getStartDate(), equalTo(lastFullTableUpdate));
     assertThat(partitionB.getEndDate(), equalTo(startTime));
+  }
+
+  @Test
+  void verifyGetLatestAnalyticsTablesUsesForcedStartDateWhenProvided() {
+    Program program = createProgram('A');
+    List<Program> programs = List.of(program);
+
+    Date forcedStartDate = new DateTime(2019, 3, 1, 4, 0).toDate();
+    Date lastFullTableUpdate = new DateTime(2019, 3, 1, 2, 0).toDate();
+    Date lastLatestPartitionUpdate = new DateTime(2019, 3, 1, 9, 0).toDate();
+    Date startTime = new DateTime(2019, 3, 1, 10, 0).toDate();
+
+    AnalyticsTableUpdateParams params =
+        AnalyticsTableUpdateParams.newBuilder()
+            .startTime(startTime)
+            .forcedStartDate(forcedStartDate)
+            .build()
+            .withLatestPartition();
+
+    List<Map<String, Object>> queryResp = new ArrayList<>();
+    queryResp.add(Map.of("dataelementid", 1));
+
+    when(settings.getLastSuccessfulAnalyticsTablesUpdate()).thenReturn(lastFullTableUpdate);
+    when(settings.getLastSuccessfulLatestAnalyticsPartitionUpdate())
+        .thenReturn(lastLatestPartitionUpdate);
+    when(jdbcTemplate.queryForList(Mockito.anyString())).thenReturn(queryResp);
+    when(idObjectManager.getAllNoAcl(Program.class)).thenReturn(programs);
+    whenConfigurationPeriodSettings();
+
+    subject.getAnalyticsTables(params);
+
+    ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+    verify(jdbcTemplate).queryForList(sql.capture());
+
+    assertThat(sql.getValue(), containsString(toLongDate(forcedStartDate)));
+    assertThat(sql.getValue(), containsString(toLongDate(startTime)));
   }
 
   @Test

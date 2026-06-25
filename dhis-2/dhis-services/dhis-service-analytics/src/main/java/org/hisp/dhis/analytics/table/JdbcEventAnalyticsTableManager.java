@@ -224,7 +224,10 @@ public class JdbcEventAnalyticsTableManager extends AbstractEventJdbcTableManage
     SystemSettings settings = settingsProvider.getCurrentSettings();
     Date lastFullTableUpdate = settings.getLastSuccessfulAnalyticsTablesUpdate();
     Date lastLatestPartitionUpdate = settings.getLastSuccessfulLatestAnalyticsPartitionUpdate();
-    Date lastAnyTableUpdate = DateUtils.getLatest(lastLatestPartitionUpdate, lastFullTableUpdate);
+    Date lastAnyTableUpdate =
+        params.getForcedStartDate() != null
+            ? params.getForcedStartDate()
+            : DateUtils.getLatest(lastLatestPartitionUpdate, lastFullTableUpdate);
 
     Assert.isTrue(
         lastFullTableUpdate.getTime() > 0L,

@@ -82,6 +82,13 @@ public class AnalyticsTableUpdateParams {
   /** Current date, only used for testing */
   private final Date today;
 
+  /**
+   * Optional override for the "latest update" start date check. Used when a full update also needs
+   * to clean the latest partition based on the last successful full update rather than the latest
+   * partition update timestamp.
+   */
+  private final Date forcedStartDate;
+
   /** Map of arbitrary extra parameters. */
   @Builder.Default private final Map<String, Object> extraParameters = new HashMap<>();
 

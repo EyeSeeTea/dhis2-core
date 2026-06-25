@@ -32,21 +32,32 @@ package org.hisp.dhis.analytics.table;
 import static org.hisp.dhis.db.model.DataType.DOUBLE;
 import static org.hisp.dhis.db.model.DataType.TEXT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import org.hisp.dhis.analytics.AnalyticsTableManager;
+import org.hisp.dhis.analytics.AnalyticsTableUpdateParams;
 import org.hisp.dhis.analytics.AnalyticsTableType;
 import org.hisp.dhis.analytics.table.model.AnalyticsTable;
 import org.hisp.dhis.analytics.table.model.AnalyticsTableColumn;
 import org.hisp.dhis.analytics.table.model.AnalyticsTablePartition;
+import org.hisp.dhis.dataelement.DataElementService;
 import org.hisp.dhis.db.model.Logged;
 import org.hisp.dhis.db.sql.SqlBuilder;
+import org.hisp.dhis.organisationunit.OrganisationUnitService;
+import org.hisp.dhis.resourcetable.ResourceTableService;
+import org.hisp.dhis.scheduling.JobProgress;
 import org.hisp.dhis.setting.SystemSettings;
 import org.hisp.dhis.setting.SystemSettingsProvider;
 import org.joda.time.DateTime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -55,6 +66,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
  */
 @ExtendWith(MockitoExtension.class)
 class AnalyticsTableServiceTest {
+  @Mock private AnalyticsTableManager tableManager;
+
+  @Mock private OrganisationUnitService organisationUnitService;
+
+  @Mock private DataElementService dataElementService;
+
+  @Mock private ResourceTableService resourceTableService;
+
   @Mock private SystemSettingsProvider settingsProvider;
 
   @Mock private SystemSettings settings;
@@ -112,5 +131,50 @@ class AnalyticsTableServiceTest {
     when(settings.getDatabaseServerCpus()).thenReturn(8);
 
     assertEquals(8, tableService.getParallelJobs());
+  }
+
+  @Test
+  void testFullUpdateUsesLatestPartitionCleanupFromLastSuccessfulFullUpdate() {
+    when(settingsProvider.getCurrentSettings()).thenReturn(settings);
+    when(settings.getParallelJobsInAnalyticsTableExport()).thenReturn(1);
+    when(tableManager.getAnalyticsTableType()).thenReturn(AnalyticsTableType.DATA_VALUE);
+    when(tableManager.validState()).thenReturn(true);
+
+    List<AnalyticsTableColumn> columns =
+        List.of(
+            AnalyticsTableColumn.builder()
+                .name("dx")
+                .dataType(TEXT)
+                .selectExpression("dx")
+                .build());
+
+    when(tableManager.getAnalyticsTables(any()))
+        .thenReturn(
+            List.of(
+                new AnalyticsTable(
+                    AnalyticsTableType.DATA_VALUE, columns, List.of("dx"), Logged.UNLOGGED)),
+            List.of(
+                new AnalyticsTable(
+                    AnalyticsTableType.DATA_VALUE, columns, List.of("dx"), Logged.UNLOGGED)));
+
+    DateTime startTime = new DateTime(2025, 3, 28, 8, 0);
+    DateTime lastSuccessfulUpdate = new DateTime(2025, 3, 27, 1, 0);
+
+    AnalyticsTableUpdateParams params =
+        AnalyticsTableUpdateParams.newBuilder()
+            .startTime(startTime.toDate())
+            .lastSuccessfulUpdate(lastSuccessfulUpdate.toDate())
+            .build();
+
+    tableService.create(params, JobProgress.noop());
+
+    ArgumentCaptor<AnalyticsTableUpdateParams> paramsCaptor =
+        ArgumentCaptor.forClass(AnalyticsTableUpdateParams.class);
+    verify(tableManager, times(2)).getAnalyticsTables(paramsCaptor.capture());
+
+    List<AnalyticsTableUpdateParams> captured = paramsCaptor.getAllValues();
+    assertNull(captured.get(0).getForcedStartDate());
+    assertEquals(AnalyticsTablePartition.LATEST_PARTITION, captured.get(1).getLastYears());
+    assertEquals(lastSuccessfulUpdate.toDate(), captured.get(1).getForcedStartDate());
   }
 }

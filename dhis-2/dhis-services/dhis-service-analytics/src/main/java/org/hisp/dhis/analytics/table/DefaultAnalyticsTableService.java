@@ -174,6 +174,18 @@ public class DefaultAnalyticsTableService implements AnalyticsTableService {
           format("Removing updated and deleted data: '{}'", tableType), SKIP_STAGE);
       progress.runStage(() -> tableManager.removeUpdatedData(tables));
       clock.logTime("Removed updated and deleted data");
+    } else {
+      AnalyticsTableUpdateParams latestPartitionParams =
+          params.withLatestPartition().toBuilder()
+              .forcedStartDate(params.getLastSuccessfulUpdate())
+              .build();
+      List<AnalyticsTable> latestPartitionTables =
+          tableManager.getAnalyticsTables(latestPartitionParams);
+
+      progress.startingStage(
+          format("Removing updated and deleted data [full-fix]: '{}'", tableType), SKIP_STAGE);
+      progress.runStage(() -> tableManager.removeUpdatedData(latestPartitionTables));
+      clock.logTime("Removed updated and deleted data [full-fix]");
     }
 
     swapTables(params, tables, progress);
