@@ -29,14 +29,20 @@
  */
 package org.hisp.dhis.web.appbundler;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.zip.ZipFile;
+import org.hisp.dhis.appmanager.AppBundleInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -100,5 +106,82 @@ class AppBundlerTest {
 
     Path bundleInfoFile = buildDirPath.resolve("apps-bundle.json");
     assertTrue(Files.exists(bundleInfoFile), "Bundle info file should exist");
+  }
+
+  @Test
+  void testAppBundlerBundlesLocalApps() throws IOException {
+    Path localAppDir = tempDir.resolve("login-app-local");
+    Files.createDirectories(localAppDir.resolve("build").resolve("app"));
+
+    ObjectMapper objectMapper = new ObjectMapper();
+    Map<String, String> packageJson = Map.of("name", "@dhis2/login-app", "version", "100.4.99");
+
+    objectMapper.writeValue(localAppDir.resolve("package.json").toFile(), packageJson);
+    objectMapper.writeValue(
+        localAppDir.resolve("build").resolve("app").resolve("package.json").toFile(), packageJson);
+
+    Files.writeString(
+        localAppDir.resolve("build").resolve("app").resolve("manifest.webapp"),
+        """
+        {
+          "version": "100.4.99",
+          "name": "Local Login App",
+          "launch_path": "/index.html",
+          "activities": {
+            "dhis": {
+              "href": "index.html"
+            }
+          }
+        }
+        """,
+        StandardCharsets.UTF_8);
+    Files.writeString(
+        localAppDir.resolve("build").resolve("app").resolve("BUILD_INFO"),
+        """
+        2025-08-08T10:00:00Z
+        ignored
+        https://example.org/local-login-app/commit/abc123
+        """,
+        StandardCharsets.UTF_8);
+    Files.writeString(
+        localAppDir.resolve("build").resolve("app").resolve("index.html"),
+        "<html><body>Local login app</body></html>",
+        StandardCharsets.UTF_8);
+
+    objectMapper.writeValue(
+        appListFile, List.of("local:" + localAppDir.toAbsolutePath().normalize()));
+
+    AppBundler bundler =
+        new AppBundler(downloadDir, buildDir, artifactId, appListFile.getAbsolutePath(), "master");
+    bundler.execute();
+
+    Path downloadZip = Path.of(downloadDir).resolve(artifactId).resolve("login-app.zip");
+    Path buildZip = Path.of(buildDir).resolve(artifactId).resolve("login-app.zip");
+    Path bundleInfoFile = Path.of(buildDir).resolve(artifactId).resolve("apps-bundle.json");
+
+    assertTrue(Files.exists(downloadZip), "Local app ZIP should exist in the download directory");
+    assertTrue(Files.exists(buildZip), "Local app ZIP should be copied to the build directory");
+    assertTrue(Files.exists(bundleInfoFile), "Bundle info file should exist");
+
+    try (ZipFile zipFile = new ZipFile(buildZip.toFile())) {
+      assertTrue(
+          zipFile.getEntry("login-app/manifest.webapp") != null,
+          "ZIP should contain a top-level folder with manifest.webapp");
+      assertTrue(
+          zipFile.getEntry("login-app/package.json") != null,
+          "ZIP should contain package.json for bundle metadata enrichment");
+    }
+
+    AppBundleInfo bundleInfo =
+        objectMapper.readValue(bundleInfoFile.toFile(), AppBundleInfo.class);
+    AppBundleInfo.BundledAppInfo bundledApp = bundleInfo.getApps().get(0);
+
+    assertEquals("login-app", bundledApp.getName());
+    assertEquals("local:" + localAppDir.toAbsolutePath().normalize(), bundledApp.getUrl());
+    assertEquals("local", bundledApp.getBranch());
+    assertEquals("100.4.99", bundledApp.getVersion());
+    assertEquals("2025-08-08T10:00:00Z", bundledApp.getBuildDate());
+    assertEquals(
+        "https://example.org/local-login-app/commit/abc123", bundledApp.getCommitUrl());
   }
 }
