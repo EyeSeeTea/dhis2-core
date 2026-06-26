@@ -54,6 +54,8 @@ import org.hisp.dhis.i18n.I18n;
 import org.hisp.dhis.i18n.I18nManager;
 import org.hisp.dhis.message.MessageSender;
 import org.hisp.dhis.outboundmessage.OutboundMessageResponse;
+import org.hisp.dhis.security.spring2fa.TwoFactorCodeDeliveryFailedException;
+import org.hisp.dhis.security.spring2fa.TwoFactorCodeSentRateLimitException;
 import org.hisp.dhis.setting.SystemSettingsProvider;
 import org.hisp.dhis.system.velocity.VelocityManager;
 import org.hisp.dhis.user.CurrentUserUtil;
@@ -131,7 +133,12 @@ public class TwoFactorAuthService {
    * @param username The user that is being enrolled.
    */
   @Transactional
-  public void enrollEmail2FA(@Nonnull String username) throws ConflictException {
+  public void enrollEmail2FA(@Nonnull String username)
+      throws ConflictException, TwoFactorCodeSentRateLimitException, TwoFactorCodeDeliveryFailedException {
+    if (userService.is2FACodeSendingLocked(username)) {
+      throw new TwoFactorCodeSentRateLimitException(
+          ErrorCode.E3199.getMessage(), TwoFactorType.EMAIL_ENABLED);
+    }
     User user = userService.getUserByUsername(username);
     if (user == null) {
       throw new ConflictException(ErrorCode.E6201);
@@ -151,6 +158,7 @@ public class TwoFactorAuthService {
 
     send2FACodeWithEmailSender(user, email2FACode.code());
 
+    userService.register2FACodeSentAttempt(username);
     userService.updateUser(user);
   }
 
@@ -160,7 +168,12 @@ public class TwoFactorAuthService {
    * @param username The user that is being enrolled.
    */
   @Transactional
-  public void enrollSMS2FA(@Nonnull String username) throws ConflictException {
+  public void enrollSMS2FA(@Nonnull String username)
+      throws ConflictException, TwoFactorCodeSentRateLimitException, TwoFactorCodeDeliveryFailedException {
+    if (userService.is2FACodeSendingLocked(username)) {
+      throw new TwoFactorCodeSentRateLimitException(
+          ErrorCode.E3199.getMessage(), TwoFactorType.SMS_ENABLED);
+    }
     User user = userService.getUserByUsername(username);
     if (user == null) {
       throw new ConflictException(ErrorCode.E6201);
@@ -180,6 +193,7 @@ public class TwoFactorAuthService {
 
     send2FACodeWithSMSSender(user, sms2FACode.code());
 
+    userService.register2FACodeSentAttempt(username);
     userService.updateUser(user);
   }
 
@@ -295,7 +309,12 @@ public class TwoFactorAuthService {
    * @param username The user to send the 2FA code.
    */
   @Transactional
-  public void sendEmail2FACode(@Nonnull String username) throws ConflictException {
+  public void sendEmail2FACode(@Nonnull String username)
+      throws ConflictException, TwoFactorCodeSentRateLimitException, TwoFactorCodeDeliveryFailedException {
+    if (userService.is2FACodeSendingLocked(username)) {
+      throw new TwoFactorCodeSentRateLimitException(
+          ErrorCode.E3199.getMessage(), TwoFactorType.EMAIL_ENABLED);
+    }
     User user = userService.getUserByUsername(username);
     if (user == null) {
       throw new ConflictException(ErrorCode.E6201);
@@ -315,10 +334,16 @@ public class TwoFactorAuthService {
 
     send2FACodeWithEmailSender(user, email2FACode.code());
 
+    userService.register2FACodeSentAttempt(username);
     userService.updateUser(user, new SystemUser());
   }
 
-  public void sendSMS2FACode(@Nonnull String username) throws ConflictException {
+  public void sendSMS2FACode(@Nonnull String username)
+      throws ConflictException, TwoFactorCodeSentRateLimitException, TwoFactorCodeDeliveryFailedException {
+    if (userService.is2FACodeSendingLocked(username)) {
+      throw new TwoFactorCodeSentRateLimitException(
+          ErrorCode.E3199.getMessage(), TwoFactorType.SMS_ENABLED);
+    }
     User user = userService.getUserByUsername(username);
     if (user == null) {
       throw new ConflictException(ErrorCode.E6201);
@@ -338,6 +363,7 @@ public class TwoFactorAuthService {
 
     send2FACodeWithSMSSender(user, sms2FACode.code());
 
+    userService.register2FACodeSentAttempt(username);
     userService.updateUser(user, new SystemUser());
   }
 
@@ -362,7 +388,7 @@ public class TwoFactorAuthService {
   }
 
   private void send2FACodeWithEmailSender(@Nonnull User user, @Nonnull String code)
-      throws ConflictException {
+      throws TwoFactorCodeDeliveryFailedException {
     I18n i18n =
         i18nManager.getI18n(
             userSettingsService.getUserSettings(user.getUsername(), true).getUserUiLocale());
@@ -385,12 +411,13 @@ public class TwoFactorAuthService {
         emailMessageSender.sendMessage(messageSubject, messageBody, null, null, Set.of(user), true);
 
     if (EmailResponse.SENT != status.getResponseObject()) {
-      throw new ConflictException(ErrorCode.E3049);
+      throw new TwoFactorCodeDeliveryFailedException(
+          ErrorCode.E3049.getMessage(), TwoFactorType.EMAIL_ENABLED);
     }
   }
 
   private void send2FACodeWithSMSSender(@Nonnull User user, @Nonnull String code)
-      throws ConflictException {
+      throws ConflictException, TwoFactorCodeDeliveryFailedException {
     if (user.getPhoneNumber() == null || user.getPhoneNumber().trim().isEmpty()) {
       throw new ConflictException(ErrorCode.E3143);
     }
@@ -405,7 +432,8 @@ public class TwoFactorAuthService {
         smsMessageSender.sendMessage(null, messageText, Set.of(user.getPhoneNumber()));
 
     if (!status.isOk()) {
-      throw new ConflictException(ErrorCode.E3149);
+      throw new TwoFactorCodeDeliveryFailedException(
+          ErrorCode.E3149.getMessage(), TwoFactorType.SMS_ENABLED);
     }
   }
 

@@ -196,20 +196,29 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
       throw new TwoFactorAuthenticationException(ErrorCode.E3023.getMessage(), type);
     }
     // If no exception is thrown, the 2FA code is valid.
+    // Clear the rate limiting cache on successful 2FA authentication.
+    userService.reset2FACodeSendAttempts(userDetails.getUsername());
   }
 
   private void sendEmail2FACode(UserDetails userDetails) {
     try {
       twoFactorAuthService.sendEmail2FACode(userDetails.getUsername());
+    } catch (TwoFactorCodeSentRateLimitException ex) {
+      throw ex;
+    } catch (TwoFactorCodeDeliveryFailedException ex) {
+      throw ex;
     } catch (ConflictException e) {
-      throw new TwoFactorAuthenticationException(
-          ErrorCode.E3049.getMessage(), TwoFactorType.EMAIL_ENABLED);
+      throw new TwoFactorCodeSentException(e.getMessage(), TwoFactorType.EMAIL_ENABLED);
     }
   }
 
   private void sendSMS2FACode(UserDetails userDetails) {
     try {
       twoFactorAuthService.sendSMS2FACode(userDetails.getUsername());
+    } catch (TwoFactorCodeSentRateLimitException ex) {
+      throw ex;
+    } catch (TwoFactorCodeDeliveryFailedException ex) {
+      throw ex;
     } catch (ConflictException e) {
       throw new TwoFactorAuthenticationException(
           ErrorCode.E3149.getMessage(), TwoFactorType.SMS_ENABLED);

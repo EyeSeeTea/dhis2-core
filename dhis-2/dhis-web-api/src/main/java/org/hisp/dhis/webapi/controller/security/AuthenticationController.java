@@ -40,7 +40,9 @@ import org.hisp.dhis.external.conf.ConfigurationKey;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.security.spring2fa.TwoFactorAuthenticationEnrolmentException;
 import org.hisp.dhis.security.spring2fa.TwoFactorAuthenticationException;
+import org.hisp.dhis.security.spring2fa.TwoFactorCodeDeliveryFailedException;
 import org.hisp.dhis.security.spring2fa.TwoFactorCodeSentException;
+import org.hisp.dhis.security.spring2fa.TwoFactorCodeSentRateLimitException;
 import org.hisp.dhis.security.spring2fa.TwoFactorWebAuthenticationDetails;
 import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.hisp.dhis.setting.SystemSettingsProvider;
@@ -58,6 +60,8 @@ import org.springframework.security.authentication.CredentialsExpiredException;
 import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.event.InteractiveAuthenticationSuccessEvent;
+import org.springframework.security.authentication.event.AbstractAuthenticationFailureEvent;
+import org.springframework.security.authentication.event.AuthenticationFailureBadCredentialsEvent;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -171,7 +175,13 @@ public class AuthenticationController {
         return LoginResponse.builder().loginStatus(STATUS.SMS_TWO_FACTOR_CODE_SENT).build();
       }
       return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_TOTP).build();
+    } catch (TwoFactorCodeSentRateLimitException e) {
+      return LoginResponse.builder().loginStatus(STATUS.TWO_FACTOR_MANY_SEND_ATTEMPTS).build();
+    } catch (TwoFactorCodeDeliveryFailedException e) {
+      return LoginResponse.builder().loginStatus(STATUS.TWO_FACTOR_CODE_DELIVERY_FAILED).build();
     } catch (TwoFactorAuthenticationException e) {
+      Authentication authToken = createAuthenticationToken(request, loginRequest);
+      publishAuthenticationFailureEvent(authToken, e);
       TwoFactorType twoFactorType = e.getType();
       if (twoFactorType == TwoFactorType.EMAIL_ENABLED) {
         return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_EMAIL).build();
@@ -180,6 +190,8 @@ public class AuthenticationController {
       }
       return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_TOTP).build();
     } catch (TwoFactorAuthenticationEnrolmentException e) {
+      Authentication authToken = createAuthenticationToken(request, loginRequest);
+      publishAuthenticationFailureEvent(authToken, e);
       return LoginResponse.builder().loginStatus(STATUS.REQUIRES_TWO_FACTOR_ENROLMENT).build();
     } catch (CredentialsExpiredException e) {
       return LoginResponse.builder().loginStatus(STATUS.PASSWORD_EXPIRED).build();
@@ -271,6 +283,15 @@ public class AuthenticationController {
     }
 
     return redirectUrl;
+  }
+
+  private void publishAuthenticationFailureEvent(Authentication auth, Exception exception) {
+    if (this.eventPublisher != null) {
+      AbstractAuthenticationFailureEvent failureEvent =
+          new AuthenticationFailureBadCredentialsEvent(
+              auth, new BadCredentialsException("2FA authentication failed", exception));
+      this.eventPublisher.publishEvent(failureEvent);
+    }
   }
 
   /**

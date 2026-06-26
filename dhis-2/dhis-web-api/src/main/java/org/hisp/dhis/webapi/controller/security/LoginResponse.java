@@ -57,7 +57,9 @@ public class LoginResponse {
     INCORRECT_TWO_FACTOR_CODE_TOTP("incorrectTwoFactorCodeTOTP"),
     INCORRECT_TWO_FACTOR_CODE_EMAIL("incorrectTwoFactorCodeEmail"),
     INCORRECT_TWO_FACTOR_CODE_SMS("incorrectTwoFactorCodeSMS"),
-    REQUIRES_TWO_FACTOR_ENROLMENT("requiresTwoFactorEnrolment");
+    REQUIRES_TWO_FACTOR_ENROLMENT("requiresTwoFactorEnrolment"),
+    TWO_FACTOR_MANY_SEND_ATTEMPTS("twoFactorManySendAttempts"),
+    TWO_FACTOR_CODE_DELIVERY_FAILED("twoFactorCodeDeliveryFailed");
 
     private final String keyName;
     private final String defaultValue;

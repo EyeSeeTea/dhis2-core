@@ -58,6 +58,8 @@ public interface CacheProvider {
 
   <V> Cache<V> createDisable2FAFailedAttemptCache(V defaultValue);
 
+  <V> Cache<V> createTwoFACodeSentAttemptCache(V defaultValue);
+
   <V> Cache<V> createUserAccountRecoverAttemptCache(V defaultValue);
 
   <V> Cache<V> createProgramOwnerCache();

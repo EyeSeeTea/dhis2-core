@@ -274,6 +274,8 @@ public enum ErrorCode {
   E3149("Sending 2FA code with SMS failed"),
   E3151("2FA code was sent to the user's phone"),
   E3152("SMS 2FA is enabled on user, can not change phone number. Disable 2FA first"),
+  // new code, not existing in 30** codes
+  E3199("2FA code was sent too many times, please try again later"),
 
   /* Metadata Validation */
   E4000("Missing required property `{0}`"),
