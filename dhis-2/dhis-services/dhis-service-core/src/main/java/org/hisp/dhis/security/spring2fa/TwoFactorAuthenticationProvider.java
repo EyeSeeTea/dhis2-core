@@ -165,6 +165,7 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
   private boolean isTwoFactorTypeEnabled(TwoFactorType type) {
     return switch (type) {
       case EMAIL_ENABLED -> configurationProvider.isEnabled(ConfigurationKey.EMAIL_2FA_ENABLED);
+      case SMS_ENABLED -> configurationProvider.isEnabled(ConfigurationKey.SMS_2FA_ENABLED);
       case TOTP_ENABLED -> configurationProvider.isEnabled(ConfigurationKey.TOTP_2FA_ENABLED);
       default -> false;
     };
@@ -178,6 +179,11 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
       sendEmail2FACode(userDetails);
       // Inform the caller that the email code has been sent.
       throw new TwoFactorCodeSentException(ErrorCode.E3051.getMessage(), type);
+    }
+
+    if (type == TwoFactorType.SMS_ENABLED && StringUtils.isBlank(code)) {
+      sendSMS2FACode(userDetails);
+      throw new TwoFactorCodeSentException(ErrorCode.E3151.getMessage(), type);
     }
 
     // If the code is blank (null, empty, or only whitespace), reject the login.
@@ -198,6 +204,15 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
     } catch (ConflictException e) {
       throw new TwoFactorAuthenticationException(
           ErrorCode.E3049.getMessage(), TwoFactorType.EMAIL_ENABLED);
+    }
+  }
+
+  private void sendSMS2FACode(UserDetails userDetails) {
+    try {
+      twoFactorAuthService.sendSMS2FACode(userDetails.getUsername());
+    } catch (ConflictException e) {
+      throw new TwoFactorAuthenticationException(
+          ErrorCode.E3149.getMessage(), TwoFactorType.SMS_ENABLED);
     }
   }
 }

@@ -29,8 +29,10 @@
  */
 package org.hisp.dhis.webapi.controller.security;
 
+import static org.hisp.dhis.external.conf.ConfigurationKey.SMS_2FA_ENABLED;
 import static org.hisp.dhis.common.CodeGenerator.generateSecureRandomBytes;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -38,7 +40,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.Calendar;
 import lombok.extern.slf4j.Slf4j;
+import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.http.HttpStatus;
+import org.hisp.dhis.message.MessageSender;
 import org.hisp.dhis.security.twofa.TwoFactorAuthService;
 import org.hisp.dhis.security.twofa.TwoFactorAuthService.Email2FACode;
 import org.hisp.dhis.security.twofa.TwoFactorType;
@@ -54,6 +58,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.core.session.SessionRegistry;
 
 /**
@@ -63,7 +68,11 @@ import org.springframework.security.core.session.SessionRegistry;
 class AuthenticationControllerTest extends AuthenticationApiTestBase {
 
   @Autowired private SystemSettingsService settingsService;
+  @Autowired private DhisConfigurationProvider config;
   @Autowired private SessionRegistry sessionRegistry;
+  @Autowired
+  @Qualifier("smsMessageSender")
+  private MessageSender smsMessageSender;
 
   @AfterEach
   void tearDown() {
@@ -71,6 +80,8 @@ class AuthenticationControllerTest extends AuthenticationApiTestBase {
     settingsService.put("credentialsExpires", 0);
     settingsService.clearCurrentSettings();
     userService.invalidateAllSessions();
+    config.getProperties().put(SMS_2FA_ENABLED.getKey(), "off");
+    smsMessageSender.clearMessages();
     clearSecurityContext();
   }
 
@@ -200,6 +211,44 @@ class AuthenticationControllerTest extends AuthenticationApiTestBase {
     userService.updateUser(admin);
 
     loginWith2FACode(email2FACode.code());
+  }
+
+  @Test
+  void testLoginSms2FA() {
+    config.getProperties().put(SMS_2FA_ENABLED.getKey(), "on");
+
+    User admin = userService.getUserByUsername("admin");
+    admin.setPhoneNumber("123456789");
+    admin.setSecret(TwoFactorAuthService.generateSMS2FACode().encodedCode());
+    admin.setTwoFactorType(TwoFactorType.SMS_ENABLED);
+    userService.updateUser(admin);
+
+    JsonLoginResponse sentCodeResponse =
+        POST(
+                "/auth/login",
+                "{'username':'admin','password':'district','twoFactorCode':''}")
+            .content(HttpStatus.OK)
+            .as(JsonLoginResponse.class);
+
+    assertEquals("SMS_TWO_FACTOR_CODE_SENT", sentCodeResponse.getLoginStatus());
+    assertNull(sentCodeResponse.getRedirectUrl());
+    assertFalse(smsMessageSender.getMessagesByEmail("123456789").isEmpty());
+
+    String actualCode = userService.getUserByUsername("admin").getSecret().split("\\|")[0];
+    String wrongCode = "000000".equals(actualCode) ? "111111" : "000000";
+
+    JsonLoginResponse wrong2FaCodeResponse =
+        POST(
+                "/auth/login",
+                "{'username':'admin','password':'district','twoFactorCode':'%s'}"
+                    .formatted(wrongCode))
+            .content(HttpStatus.OK)
+            .as(JsonLoginResponse.class);
+
+    assertEquals("INCORRECT_TWO_FACTOR_CODE_SMS", wrong2FaCodeResponse.getLoginStatus());
+    assertNull(wrong2FaCodeResponse.getRedirectUrl());
+
+    loginWith2FACode(actualCode);
   }
 
   @Test

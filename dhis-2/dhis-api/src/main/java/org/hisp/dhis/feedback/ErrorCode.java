@@ -267,6 +267,13 @@ public enum ErrorCode {
   E3050("2FA code can not be null or empty"),
   E3051("2FA code was sent to the user's email"),
   E3052("Email 2FA is enabled on user, can not change email. Disable 2FA first"),
+  E3143(
+      "User does not have a phone number, please verify your phone number before you try to enable 2FA"),
+  E3145("SMS based 2FA is not enabled"),
+  E3148("User does not have SMS 2FA enabled"),
+  E3149("Sending 2FA code with SMS failed"),
+  E3151("2FA code was sent to the user's phone"),
+  E3152("SMS 2FA is enabled on user, can not change phone number. Disable 2FA first"),
 
   /* Metadata Validation */
   E4000("Missing required property `{0}`"),

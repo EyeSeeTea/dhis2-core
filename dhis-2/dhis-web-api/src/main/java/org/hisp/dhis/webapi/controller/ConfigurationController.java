@@ -531,13 +531,16 @@ public class ConfigurationController {
   }
 
   public record TwoFactorMethods(
-      @JsonProperty boolean totp2faEnabled, @JsonProperty boolean email2faEnabled) {}
+      @JsonProperty boolean totp2faEnabled,
+      @JsonProperty boolean email2faEnabled,
+      @JsonProperty boolean sms2faEnabled) {}
 
   @GetMapping("/twoFactorMethods")
   public @ResponseBody TwoFactorMethods getTwoFactorMethods() {
     return new TwoFactorMethods(
         config.isEnabled(ConfigurationKey.TOTP_2FA_ENABLED),
-        config.isEnabled(ConfigurationKey.EMAIL_2FA_ENABLED));
+        config.isEnabled(ConfigurationKey.EMAIL_2FA_ENABLED),
+        config.isEnabled(ConfigurationKey.SMS_2FA_ENABLED));
   }
 
   /**

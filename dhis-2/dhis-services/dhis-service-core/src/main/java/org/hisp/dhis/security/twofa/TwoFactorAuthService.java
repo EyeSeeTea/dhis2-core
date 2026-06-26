@@ -39,7 +39,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import javax.annotation.Nonnull;
-import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hisp.dhis.common.CodeGenerator;
 import org.hisp.dhis.common.NonTransactional;
@@ -64,6 +63,7 @@ import org.hisp.dhis.user.UserDetails;
 import org.hisp.dhis.user.UserService;
 import org.hisp.dhis.user.UserSettingsService;
 import org.jboss.aerogear.security.otp.api.Base32;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,7 +72,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Slf4j
 @Service
-@AllArgsConstructor
 public class TwoFactorAuthService {
 
   public static final String TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME = "R_ENABLE_2FA";
@@ -81,9 +80,27 @@ public class TwoFactorAuthService {
   private final SystemSettingsProvider settingsProvider;
   private final UserService userService;
   private final MessageSender emailMessageSender;
+  private final MessageSender smsMessageSender;
   private final UserSettingsService userSettingsService;
   private final I18nManager i18nManager;
   private final DhisConfigurationProvider configurationProvider;
+
+  public TwoFactorAuthService(
+      SystemSettingsProvider settingsProvider,
+      UserService userService,
+      @Qualifier("emailMessageSender") MessageSender emailMessageSender,
+      @Qualifier("smsMessageSender") MessageSender smsMessageSender,
+      UserSettingsService userSettingsService,
+      I18nManager i18nManager,
+      DhisConfigurationProvider configurationProvider) {
+    this.settingsProvider = settingsProvider;
+    this.userService = userService;
+    this.emailMessageSender = emailMessageSender;
+    this.smsMessageSender = smsMessageSender;
+    this.userSettingsService = userSettingsService;
+    this.i18nManager = i18nManager;
+    this.configurationProvider = configurationProvider;
+  }
 
   /**
    * Enroll user in time-based one-time password (TOTP) 2FA authentication.
@@ -133,6 +150,35 @@ public class TwoFactorAuthService {
     user.setTwoFactorType(TwoFactorType.ENROLLING_EMAIL);
 
     send2FACodeWithEmailSender(user, email2FACode.code());
+
+    userService.updateUser(user);
+  }
+
+  /**
+   * Enroll user in SMS-based 2FA authentication.
+   *
+   * @param username The user that is being enrolled.
+   */
+  @Transactional
+  public void enrollSMS2FA(@Nonnull String username) throws ConflictException {
+    User user = userService.getUserByUsername(username);
+    if (user == null) {
+      throw new ConflictException(ErrorCode.E6201);
+    }
+    if (user.isTwoFactorEnabled()) {
+      throw new ConflictException(ErrorCode.E3022);
+    }
+    if (!configurationProvider.isEnabled(ConfigurationKey.SMS_2FA_ENABLED)) {
+      throw new ConflictException(ErrorCode.E3145);
+    }
+    if (user.getPhoneNumber() == null || user.getPhoneNumber().trim().isEmpty()) {
+      throw new ConflictException(ErrorCode.E3143);
+    }
+    SMS2FACode sms2FACode = generateSMS2FACode();
+    user.setSecret(sms2FACode.encodedCode());
+    user.setTwoFactorType(TwoFactorType.ENROLLING_SMS);
+
+    send2FACodeWithSMSSender(user, sms2FACode.code());
 
     userService.updateUser(user);
   }
@@ -192,6 +238,11 @@ public class TwoFactorAuthService {
         && Strings.isNullOrEmpty(code)) {
       sendEmail2FACode(user.getUsername());
       throw new ConflictException(ErrorCode.E3051);
+    }
+    if (TwoFactorType.SMS_ENABLED.equals(user.getTwoFactorType())
+        && Strings.isNullOrEmpty(code)) {
+      sendSMS2FACode(user.getUsername());
+      throw new ConflictException(ErrorCode.E3151);
     }
     if (Strings.isNullOrEmpty(code)) {
       throw new ConflictException(ErrorCode.E3050);
@@ -267,7 +318,32 @@ public class TwoFactorAuthService {
     userService.updateUser(user, new SystemUser());
   }
 
+  public void sendSMS2FACode(@Nonnull String username) throws ConflictException {
+    User user = userService.getUserByUsername(username);
+    if (user == null) {
+      throw new ConflictException(ErrorCode.E6201);
+    }
+    if (!user.isTwoFactorEnabled()) {
+      throw new ConflictException(ErrorCode.E3031);
+    }
+    if (!user.getTwoFactorType().equals(TwoFactorType.SMS_ENABLED)) {
+      throw new ConflictException(ErrorCode.E3148);
+    }
+    if (user.getPhoneNumber() == null || user.getPhoneNumber().trim().isEmpty()) {
+      throw new ConflictException(ErrorCode.E3143);
+    }
+
+    SMS2FACode sms2FACode = generateSMS2FACode();
+    user.setSecret(sms2FACode.encodedCode());
+
+    send2FACodeWithSMSSender(user, sms2FACode.code());
+
+    userService.updateUser(user, new SystemUser());
+  }
+
   public record Email2FACode(String code, String encodedCode) {}
+
+  public record SMS2FACode(String code, String encodedCode) {}
 
   @Nonnull
   @NonTransactional
@@ -275,6 +351,14 @@ public class TwoFactorAuthService {
     String code = new String(CodeGenerator.generateSecureRandomNumber(6));
     String encodedCode = code + "|" + (System.currentTimeMillis() + TWOFA_EMAIL_CODE_EXPIRY_MILLIS);
     return new Email2FACode(code, encodedCode);
+  }
+
+  @Nonnull
+  @NonTransactional
+  public static SMS2FACode generateSMS2FACode() {
+    String code = new String(CodeGenerator.generateSecureRandomNumber(6));
+    String encodedCode = code + "|" + (System.currentTimeMillis() + TWOFA_EMAIL_CODE_EXPIRY_MILLIS);
+    return new SMS2FACode(code, encodedCode);
   }
 
   private void send2FACodeWithEmailSender(@Nonnull User user, @Nonnull String code)
@@ -302,6 +386,26 @@ public class TwoFactorAuthService {
 
     if (EmailResponse.SENT != status.getResponseObject()) {
       throw new ConflictException(ErrorCode.E3049);
+    }
+  }
+
+  private void send2FACodeWithSMSSender(@Nonnull User user, @Nonnull String code)
+      throws ConflictException {
+    if (user.getPhoneNumber() == null || user.getPhoneNumber().trim().isEmpty()) {
+      throw new ConflictException(ErrorCode.E3143);
+    }
+
+    I18n i18n =
+        i18nManager.getI18n(
+            userSettingsService.getUserSettings(user.getUsername(), true).getUserUiLocale());
+
+    String messageText = i18n.getString("sms_2fa_message") + ": " + code;
+
+    OutboundMessageResponse status =
+        smsMessageSender.sendMessage(null, messageText, Set.of(user.getPhoneNumber()));
+
+    if (!status.isOk()) {
+      throw new ConflictException(ErrorCode.E3149);
     }
   }
 

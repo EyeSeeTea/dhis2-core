@@ -62,6 +62,9 @@ import org.hisp.dhis.user.AuthenticationService;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserSettingsService;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContext;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 /**
@@ -288,11 +291,18 @@ public class SmsMessageSender implements MessageSender {
       sms.setStatus(OutboundSmsStatus.FAILED);
     }
 
+    Authentication originalAuth = SecurityContextHolder.getContext().getAuthentication();
     try {
       authenticationService.obtainSystemAuthentication();
       outboundSmsService.save(sms);
     } finally {
-      authenticationService.clearAuthentication();
+      if (originalAuth != null) {
+        SecurityContext context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(originalAuth);
+        SecurityContextHolder.setContext(context);
+      } else {
+        authenticationService.clearAuthentication();
+      }
     }
     status.setDescription(gatewayResponse.getResponseMessage());
     status.setResponseObject(gatewayResponse);

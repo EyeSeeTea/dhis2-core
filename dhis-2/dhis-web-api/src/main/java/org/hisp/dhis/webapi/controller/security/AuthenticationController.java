@@ -167,12 +167,16 @@ public class AuthenticationController {
       TwoFactorType twoFactorType = e.getType();
       if (twoFactorType == TwoFactorType.EMAIL_ENABLED) {
         return LoginResponse.builder().loginStatus(STATUS.EMAIL_TWO_FACTOR_CODE_SENT).build();
+      } else if (twoFactorType == TwoFactorType.SMS_ENABLED) {
+        return LoginResponse.builder().loginStatus(STATUS.SMS_TWO_FACTOR_CODE_SENT).build();
       }
       return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_TOTP).build();
     } catch (TwoFactorAuthenticationException e) {
       TwoFactorType twoFactorType = e.getType();
       if (twoFactorType == TwoFactorType.EMAIL_ENABLED) {
         return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_EMAIL).build();
+      } else if (twoFactorType == TwoFactorType.SMS_ENABLED) {
+        return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_SMS).build();
       }
       return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_TOTP).build();
     } catch (TwoFactorAuthenticationEnrolmentException e) {

@@ -53,8 +53,10 @@ public class LoginResponse {
     ACCOUNT_EXPIRED("accountExpired"),
     PASSWORD_EXPIRED("passwordExpired"),
     EMAIL_TWO_FACTOR_CODE_SENT("emailTwoFactorCodeSent"),
+    SMS_TWO_FACTOR_CODE_SENT("smsTwoFactorCodeSent"),
     INCORRECT_TWO_FACTOR_CODE_TOTP("incorrectTwoFactorCodeTOTP"),
     INCORRECT_TWO_FACTOR_CODE_EMAIL("incorrectTwoFactorCodeEmail"),
+    INCORRECT_TWO_FACTOR_CODE_SMS("incorrectTwoFactorCodeSMS"),
     REQUIRES_TWO_FACTOR_ENROLMENT("requiresTwoFactorEnrolment");
 
     private final String keyName;

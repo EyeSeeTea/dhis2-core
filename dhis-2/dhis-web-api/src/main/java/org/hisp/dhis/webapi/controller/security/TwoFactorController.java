@@ -88,6 +88,14 @@ public class TwoFactorController {
         "The user has enrolled in email-based 2FA, a code was generated and sent successfully to the user's email");
   }
 
+  @PostMapping(value = "/enrollSMS2FA")
+  @ResponseStatus(HttpStatus.OK)
+  public WebMessage enrollSMS2FA(@CurrentUser User currentUser) throws ConflictException {
+    twoFactorAuthService.enrollSMS2FA(currentUser.getUsername());
+    return ok(
+        "The user has enrolled in SMS-based 2FA, a code was generated and sent successfully to the user's phone");
+  }
+
   /**
    * Returns generated QR code for the user to scan.
    *

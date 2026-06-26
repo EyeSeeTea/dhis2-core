@@ -770,6 +770,9 @@ public enum ConfigurationKey {
   /** Enable email-based 2FA authentication. (default: false) */
   EMAIL_2FA_ENABLED("login.security.email_2fa.enabled", Constants.OFF, false),
 
+  /** Enable SMS-based 2FA authentication. (default: false) */
+  SMS_2FA_ENABLED("login.security.sms_2fa.enabled", Constants.OFF, false),
+
   /** Enable TOTP-based 2FA authentication. (default: true) */
   TOTP_2FA_ENABLED("login.security.totp_2fa.enabled", Constants.ON, false),
 

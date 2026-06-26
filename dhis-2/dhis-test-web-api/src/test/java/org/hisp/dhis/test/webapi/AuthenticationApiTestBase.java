@@ -29,13 +29,16 @@
  */
 package org.hisp.dhis.test.webapi;
 
+import org.hisp.dhis.message.MessageSender;
 import org.hisp.dhis.test.config.H2TestConfig;
+import org.hisp.dhis.test.message.DefaultFakeMessageSender;
 import org.hisp.dhis.test.webapi.AuthenticationApiTestBase.AuthConfigProviderConfig;
 import org.hisp.dhis.webapi.security.config.WebMvcConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer;
 import org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers;
 import org.springframework.security.web.FilterChainProxy;
@@ -74,6 +77,12 @@ public abstract class AuthenticationApiTestBase extends H2ControllerIntegrationT
                   new AntPathRequestMatcher("/api/ping"),
                   new AntPathRequestMatcher("/auth/login"),
                   new AntPathRequestMatcher("/favicon.ico"));
+    }
+
+    @Bean("smsMessageSender")
+    @Primary
+    public MessageSender smsMessageSender() {
+      return new DefaultFakeMessageSender();
     }
   }
 
