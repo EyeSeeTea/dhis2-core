@@ -445,7 +445,8 @@ public class User extends BaseIdentifiableObject implements MetadataObject {
     this.password = password;
   }
 
-  @JsonIgnore
+  @JsonProperty
+  @JacksonXmlProperty(namespace = DxfNamespaces.DXF_2_0)
   public boolean isTwoFactorEnabled() {
     return this.twoFactorType != null && this.twoFactorType.isEnabled();
   }
