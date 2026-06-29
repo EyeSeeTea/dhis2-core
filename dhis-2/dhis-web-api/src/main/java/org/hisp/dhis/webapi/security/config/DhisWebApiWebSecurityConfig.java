@@ -29,6 +29,7 @@
  */
 package org.hisp.dhis.webapi.security.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -61,6 +62,7 @@ import org.hisp.dhis.security.spring2fa.TwoFactorWebAuthenticationDetailsSource;
 import org.hisp.dhis.webapi.filter.CspFilter;
 import org.hisp.dhis.webapi.filter.DhisCorsProcessor;
 import org.hisp.dhis.webapi.filter.SessionTimeoutHeaderFilter;
+import org.hisp.dhis.webapi.filter.TwoFactorSetupRestrictionFilter;
 import org.hisp.dhis.webapi.security.FormLoginBasicAuthenticationEntryPoint;
 import org.hisp.dhis.webapi.security.Http401LoginUrlAuthenticationEntryPoint;
 import org.hisp.dhis.webapi.security.apikey.ApiTokenAuthManager;
@@ -121,6 +123,10 @@ public class DhisWebApiWebSecurityConfig {
     DhisWebApiWebSecurityConfig.apiContextPath = apiContextPath;
   }
 
+  public static String getApiContextPath() {
+    return apiContextPath;
+  }
+
   @Autowired public DataSource dataSource;
 
   @Autowired private DhisConfigurationProvider dhisConfig;
@@ -154,6 +160,8 @@ public class DhisWebApiWebSecurityConfig {
   @Autowired private DhisAuthorizationCodeTokenResponseClient jwtPrivateCodeTokenResponseClient;
 
   @Autowired private RequestCache requestCache;
+
+  @Autowired private ObjectMapper objectMapper;
 
   private static class CustomRequestMatcher implements RequestMatcher {
     private static final Pattern p1 = Pattern.compile("^/api/apps/.+", Pattern.CASE_INSENSITIVE);
@@ -266,6 +274,7 @@ public class DhisWebApiWebSecurityConfig {
     configureCspFilter(http, dhisConfig, configurationService, cacheProvider);
     configureApiTokenAuthorizationFilter(http);
     configureOAuthTokenFilters(http);
+    configureTwoFactorSetupRestrictionFilter(http);
 
     http.addFilterAfter(new SessionTimeoutHeaderFilter(), SessionManagementFilter.class);
 
@@ -501,6 +510,12 @@ public class DhisWebApiWebSecurityConfig {
         || dhisConfig.isEnabled(ConfigurationKey.OAUTH2_SERVER_ENABLED)) {
       http.addFilterAfter(getJwtBearerTokenAuthenticationFilter(), BasicAuthenticationFilter.class);
     }
+  }
+
+  private void configureTwoFactorSetupRestrictionFilter(HttpSecurity http) {
+    http.addFilterAfter(
+        new TwoFactorSetupRestrictionFilter(apiContextPath, objectMapper),
+        BasicAuthenticationFilter.class);
   }
 
   /**

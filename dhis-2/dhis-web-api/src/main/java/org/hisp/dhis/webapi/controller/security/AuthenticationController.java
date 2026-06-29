@@ -38,7 +38,6 @@ import javax.annotation.PostConstruct;
 import org.hisp.dhis.common.OpenApi;
 import org.hisp.dhis.external.conf.ConfigurationKey;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
-import org.hisp.dhis.security.spring2fa.TwoFactorAuthenticationEnrolmentException;
 import org.hisp.dhis.security.spring2fa.TwoFactorAuthenticationException;
 import org.hisp.dhis.security.spring2fa.TwoFactorCodeDeliveryFailedException;
 import org.hisp.dhis.security.spring2fa.TwoFactorCodeSentException;
@@ -49,6 +48,7 @@ import org.hisp.dhis.setting.SystemSettingsProvider;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserDetails;
 import org.hisp.dhis.user.UserService;
+import org.hisp.dhis.webapi.controller.security.TwoFactorSetupSessionAccess;
 import org.hisp.dhis.webapi.controller.security.LoginResponse.STATUS;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
@@ -165,6 +165,12 @@ public class AuthenticationController {
             new InteractiveAuthenticationSuccessEvent(authenticationResult, this.getClass()));
       }
 
+      if (requiresTwoFactorEnrolment(authenticationResult)) {
+        TwoFactorSetupSessionAccess.markRequired(request);
+        return LoginResponse.builder().loginStatus(STATUS.REQUIRES_TWO_FACTOR_ENROLMENT).build();
+      }
+
+      TwoFactorSetupSessionAccess.clear(request);
       return LoginResponse.builder().loginStatus(STATUS.SUCCESS).redirectUrl(redirectUrl).build();
 
     } catch (TwoFactorCodeSentException e) {
@@ -189,10 +195,6 @@ public class AuthenticationController {
         return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_SMS).build();
       }
       return LoginResponse.builder().loginStatus(STATUS.INCORRECT_TWO_FACTOR_CODE_TOTP).build();
-    } catch (TwoFactorAuthenticationEnrolmentException e) {
-      Authentication authToken = createAuthenticationToken(request, loginRequest);
-      publishAuthenticationFailureEvent(authToken, e);
-      return LoginResponse.builder().loginStatus(STATUS.REQUIRES_TWO_FACTOR_ENROLMENT).build();
     } catch (CredentialsExpiredException e) {
       return LoginResponse.builder().loginStatus(STATUS.PASSWORD_EXPIRED).build();
     } catch (LockedException e) {
@@ -283,6 +285,13 @@ public class AuthenticationController {
     }
 
     return redirectUrl;
+  }
+
+  private boolean requiresTwoFactorEnrolment(Authentication authenticationResult) {
+    if (!(authenticationResult.getPrincipal() instanceof UserDetails userDetails)) {
+      return false;
+    }
+    return TwoFactorSetupSessionAccess.requiresTwoFactorEnrolment(userDetails);
   }
 
   private void publishAuthenticationFailureEvent(Authentication auth, Exception exception) {

@@ -35,6 +35,7 @@ import static org.springframework.http.MediaType.APPLICATION_OCTET_STREAM_VALUE;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Strings;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Base64;
@@ -50,6 +51,7 @@ import org.hisp.dhis.security.twofa.TwoFactorAuthService;
 import org.hisp.dhis.user.CurrentUser;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserDetails;
+import org.hisp.dhis.webapi.controller.security.TwoFactorSetupSessionAccess;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -169,13 +171,16 @@ public class TwoFactorController {
       consumes = {"text/*", "application/*"})
   @ResponseStatus(HttpStatus.OK)
   public WebMessage enable(
-      @RequestBody Map<String, String> body, @CurrentUser(required = true) UserDetails currentUser)
+      @RequestBody Map<String, String> body,
+      HttpServletRequest request,
+      @CurrentUser(required = true) UserDetails currentUser)
       throws ForbiddenException, ConflictException {
     String code = body.get("code");
     if (Strings.isNullOrEmpty(code)) {
       throw new ConflictException(ErrorCode.E3050);
     }
     twoFactorAuthService.enable2FA(currentUser.getUsername(), code, currentUser);
+    TwoFactorSetupSessionAccess.clear(request);
     return ok("2FA was enabled successfully");
   }
 

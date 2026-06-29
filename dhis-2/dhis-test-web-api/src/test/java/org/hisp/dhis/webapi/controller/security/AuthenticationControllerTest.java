@@ -31,14 +31,21 @@ package org.hisp.dhis.webapi.controller.security;
 
 import static org.hisp.dhis.external.conf.ConfigurationKey.SMS_2FA_ENABLED;
 import static org.hisp.dhis.common.CodeGenerator.generateSecureRandomBytes;
+import static org.hisp.dhis.security.twofa.TwoFactorAuthService.TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Calendar;
+import java.util.Map;
+import java.util.Set;
+import jakarta.servlet.http.Cookie;
+import org.springframework.mock.web.MockHttpSession;
 import lombok.extern.slf4j.Slf4j;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.http.HttpStatus;
@@ -52,6 +59,7 @@ import org.hisp.dhis.test.webapi.json.domain.JsonLoginResponse;
 import org.hisp.dhis.test.webapi.json.domain.JsonWebMessage;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserDetails;
+import org.hisp.dhis.user.UserRole;
 import org.jboss.aerogear.security.otp.Totp;
 import org.jboss.aerogear.security.otp.api.Base32;
 import org.junit.jupiter.api.AfterEach;
@@ -59,7 +67,9 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.session.SessionRegistry;
+import org.springframework.test.web.servlet.MvcResult;
 
 /**
  * @author Morten Svanæs <msvanaes@dhis2.org>
@@ -70,6 +80,7 @@ class AuthenticationControllerTest extends AuthenticationApiTestBase {
   @Autowired private SystemSettingsService settingsService;
   @Autowired private DhisConfigurationProvider config;
   @Autowired private SessionRegistry sessionRegistry;
+  @Autowired private ObjectMapper objectMapper;
   @Autowired
   @Qualifier("smsMessageSender")
   private MessageSender smsMessageSender;
@@ -366,6 +377,80 @@ class AuthenticationControllerTest extends AuthenticationApiTestBase {
 
     assertNotNull(actual);
     assertEquals("admin", actual.getUsername());
+  }
+
+  @Test
+  void testLoginWith2FARestrictionAllowsOnlySetupEndpoints() throws Exception {
+    User user = createUserWithAuth("requires2fa", "ALL");
+    UserRole role = user.getUserRoles().iterator().next();
+    role.setRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
+    userService.updateUserRole(role);
+
+    MvcResult loginResult =
+        mvc.perform(
+                post("/api/auth/login")
+                    .contentType("application/json")
+                    .content("{\"username\":\"requires2fa\",\"password\":\"district\"}"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    Map<String, Object> loginBody =
+        objectMapper.readValue(loginResult.getResponse().getContentAsString(), Map.class);
+    assertEquals("REQUIRES_TWO_FACTOR_ENROLMENT", loginBody.get("loginStatus"));
+
+    MockHttpSession session = (MockHttpSession) loginResult.getRequest().getSession(false);
+    assertNotNull(session);
+
+    MockHttpServletResponse blockedResponse =
+        mvc.perform(get("/api/users").session(session))
+            .andExpect(status().isForbidden())
+            .andReturn()
+            .getResponse();
+
+    Map<String, Object> blockedBody =
+        objectMapper.readValue(blockedResponse.getContentAsString(), Map.class);
+    assertEquals("REQUIRES_TWO_FACTOR_ENROLMENT", blockedBody.get("loginStatus"));
+
+    mvc.perform(post("/api/2fa/enrollTOTP2FA").session(session)).andExpect(status().isOk());
+
+    User userWithSecret = userService.getUserByUsername("requires2fa");
+    String code = new Totp(userWithSecret.getSecret()).now();
+
+    mvc.perform(
+            post("/api/2fa/enable")
+                .session(session)
+                .contentType("application/json")
+                .content("{\"code\":\"%s\"}".formatted(code)))
+        .andExpect(status().isOk());
+
+    mvc.perform(get("/api/users").session(session)).andExpect(status().isOk());
+  }
+
+  @Test
+  void testLoginWith2FARestrictionRedirectsAppNavigationToLoginPage() throws Exception {
+    User user = createUserWithAuth("requires2faredirect", "ALL");
+    UserRole role = user.getUserRoles().iterator().next();
+    role.setRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
+    userService.updateUserRole(role);
+
+    MvcResult loginResult =
+        mvc.perform(
+                post("/api/auth/login")
+                    .contentType("application/json")
+                    .content("{\"username\":\"requires2faredirect\",\"password\":\"district\"}"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    MockHttpSession session = (MockHttpSession) loginResult.getRequest().getSession(false);
+    assertNotNull(session);
+
+    MockHttpServletResponse redirectResponse =
+        mvc.perform(get("/apps/Homepage-App/").session(session))
+            .andExpect(status().is3xxRedirection())
+            .andReturn()
+            .getResponse();
+
+    assertEquals("/dhis-web-login", redirectResponse.getRedirectedUrl());
   }
 
   private void loginWith2FACode(String code) {

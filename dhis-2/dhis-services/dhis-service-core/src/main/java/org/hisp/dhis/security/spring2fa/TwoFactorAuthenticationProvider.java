@@ -29,10 +29,8 @@
  */
 package org.hisp.dhis.security.spring2fa;
 
-import static org.hisp.dhis.security.twofa.TwoFactorAuthService.TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME;
 import static org.hisp.dhis.security.twofa.TwoFactorAuthUtils.isValid2FACode;
 
-import java.util.Set;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import lombok.extern.slf4j.Slf4j;
@@ -107,8 +105,6 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
     // Validate that the user is not configured for external auth only
     checkExternalAuth(userDetails, username);
 
-    // If the user’s role requires 2FA enrollment but they haven’t set it up, throw an exception.
-    checkTwoFactorEnrolment(userDetails);
 
     // Handle two-factor authentication validations.
     checkTwoFactorAuthentication(auth, userDetails);
@@ -132,15 +128,6 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
           username);
       throw new BadCredentialsException(
           "Invalid login method, user is using external authentication");
-    }
-  }
-
-  private void checkTwoFactorEnrolment(UserDetails userDetails) {
-    boolean has2FARestriction =
-        userDetails.hasAnyRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
-    if (!userDetails.isTwoFactorEnabled() && has2FARestriction) {
-      throw new TwoFactorAuthenticationEnrolmentException(
-          "User must setup two-factor authentication first before logging in");
     }
   }
 
