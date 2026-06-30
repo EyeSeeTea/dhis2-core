@@ -263,6 +263,15 @@ public class MeController {
               + " first");
     }
 
+    if (currentUser.getTwoFactorType() != null
+        && currentUser.getTwoFactorType().equals(TwoFactorType.SMS_ENABLED)
+        && currentUser.getPhoneNumber() != null
+        && user.getPhoneNumber() != null
+        && !currentUser.getPhoneNumber().equals(user.getPhoneNumber())) {
+      throw new ConflictException(
+          "Phone number cannot be changed, when SMS-based 2FA is enabled, please disable 2FA first");
+    }
+
     merge(currentUser, user);
 
     if (user.getWhatsApp() != null && !ValidationUtils.validateWhatsApp(user.getWhatsApp())) {

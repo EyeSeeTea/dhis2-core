@@ -30,6 +30,7 @@
 package org.hisp.dhis.webapi.controller;
 
 import static org.hisp.dhis.external.conf.ConfigurationKey.EMAIL_2FA_ENABLED;
+import static org.hisp.dhis.external.conf.ConfigurationKey.SMS_2FA_ENABLED;
 import static org.hisp.dhis.external.conf.ConfigurationKey.TOTP_2FA_ENABLED;
 import static org.hisp.dhis.http.HttpAssertions.assertStatus;
 import static org.hisp.dhis.test.webapi.Assertions.assertWebMessage;
@@ -104,6 +105,7 @@ class TwoFactorControllerTest extends H2ControllerIntegrationTestBase {
   void tearDown() {
     emailMessageSender.clearMessages();
     config.getProperties().put(EMAIL_2FA_ENABLED.getKey(), "off");
+    config.getProperties().put(SMS_2FA_ENABLED.getKey(), "off");
     config.getProperties().put(TOTP_2FA_ENABLED.getKey(), "on");
   }
 
@@ -202,6 +204,30 @@ class TwoFactorControllerTest extends H2ControllerIntegrationTestBase {
     assertStatus(HttpStatus.OK, POST("/2fa/enable", "{'code':'" + code + "'}"));
     User enabledUser = userService.getUserByUsername(user.getUsername());
     assertSame(TwoFactorType.EMAIL_ENABLED, enabledUser.getTwoFactorType());
+  }
+
+  @Test
+  void testEnrollSMS2FA() {
+    config.getProperties().put(SMS_2FA_ENABLED.getKey(), "on");
+
+    User user = createUserAndInjectSecurityContext(false);
+    user.setPhoneNumber("123456789");
+    userService.updateUser(user);
+
+    assertStatus(HttpStatus.OK, POST("/2fa/enrollSMS2FA"));
+    User enrolledUser = userService.getUserByUsername(user.getUsername());
+    assertNotNull(enrolledUser.getSecret());
+    assertTrue(enrolledUser.getSecret().matches("^[0-9]{6}\\|\\d+$"));
+    assertSame(TwoFactorType.ENROLLING_SMS, enrolledUser.getTwoFactorType());
+
+    List<OutboundMessage> messagesByPhone = emailMessageSender.getMessagesByEmail("123456789");
+    assertFalse(messagesByPhone.isEmpty());
+    String code = enrolledUser.getSecret().split("\\|")[0];
+    assertTrue(messagesByPhone.get(0).getText().contains(code));
+
+    assertStatus(HttpStatus.OK, POST("/2fa/enable", "{'code':'" + code + "'}"));
+    User enabledUser = userService.getUserByUsername(user.getUsername());
+    assertSame(TwoFactorType.SMS_ENABLED, enabledUser.getTwoFactorType());
   }
 
   @Test
@@ -316,6 +342,39 @@ class TwoFactorControllerTest extends H2ControllerIntegrationTestBase {
 
     User disabledUser = userService.getUserByUsername(newUser.getUsername());
     assertNull(disabledUser.getSecret());
+  }
+
+  @Test
+  void testDisableSMS2FAWithoutCodeSendsSmsCode() {
+    config.getProperties().put(SMS_2FA_ENABLED.getKey(), "on");
+
+    User user = createUserAndInjectSecurityContext(false);
+    user.setPhoneNumber("123456789");
+    userService.updateUser(user);
+
+    assertStatus(HttpStatus.OK, POST("/2fa/enrollSMS2FA"));
+    String enrollCode =
+        userService.getUserByUsername(user.getUsername()).getSecret().split("\\|")[0];
+    assertStatus(HttpStatus.OK, POST("/2fa/enable", "{'code':'" + enrollCode + "'}"));
+
+    emailMessageSender.clearMessages();
+
+    assertWebMessage(
+        "Conflict",
+        409,
+        "ERROR",
+        "2FA code was sent to the users phone",
+        POST("/2fa/disable", "{}").content(HttpStatus.CONFLICT));
+
+    User enabledUser = userService.getUserByUsername(user.getUsername());
+    String disableCode = enabledUser.getSecret().split("\\|")[0];
+    assertFalse(emailMessageSender.getMessagesByEmail("123456789").isEmpty());
+
+    assertStatus(HttpStatus.OK, POST("/2fa/disable", "{'code':'" + disableCode + "'}"));
+
+    User disabledUser = userService.getUserByUsername(user.getUsername());
+    assertNull(disabledUser.getSecret());
+    assertEquals(TwoFactorType.NOT_ENABLED, disabledUser.getTwoFactorType());
   }
 
   @Test

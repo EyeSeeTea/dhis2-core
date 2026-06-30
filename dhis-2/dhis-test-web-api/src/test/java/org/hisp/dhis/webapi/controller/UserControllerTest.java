@@ -65,6 +65,7 @@ import org.hisp.dhis.message.MessageSender;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.organisationunit.OrganisationUnitService;
 import org.hisp.dhis.outboundmessage.OutboundMessage;
+import org.hisp.dhis.security.twofa.TwoFactorType;
 import org.hisp.dhis.setting.SystemSettingsService;
 import org.hisp.dhis.test.webapi.H2ControllerIntegrationTestBase;
 import org.hisp.dhis.test.webapi.json.domain.JsonErrorReport;
@@ -1276,6 +1277,49 @@ class UserControllerTest extends H2ControllerIntegrationTestBase {
     List<OutboundMessage> messagesByEmail = emailMessageSender.getMessagesByEmail(email);
     assertFalse(messagesByEmail.isEmpty());
     return messagesByEmail.get(0);
+  }
+
+  @Test
+  void testChangeEmailWithEmail2FaEnabled() {
+    User user = userService.getUserByUsername(peter.getUsername());
+    user.setSecret("secret");
+    user.setTwoFactorType(TwoFactorType.EMAIL_ENABLED);
+    userService.updateUser(user);
+
+    assertStatus(
+        HttpStatus.CONFLICT,
+        PATCH(
+            "/users/{id}?importReportMode=ERRORS",
+            peter.getUid(),
+            Body("[{'op': 'replace', 'path': '/email', 'value': 'peter-new-mail@pan.net'}]")));
+    assertStatus(
+        HttpStatus.CONFLICT,
+        PATCH(
+            "/users/{id}?importReportMode=ERRORS",
+            peter.getUid(),
+            Body("[{'op': 'replace', 'path': '/email', 'value': null}]")));
+  }
+
+  @Test
+  void testChangePhoneWithSMS2FaEnabled() {
+    User user = userService.getUserByUsername(peter.getUsername());
+    user.setSecret("secret");
+    user.setPhoneNumber("123456789");
+    user.setTwoFactorType(TwoFactorType.SMS_ENABLED);
+    userService.updateUser(user);
+
+    assertStatus(
+        HttpStatus.CONFLICT,
+        PATCH(
+            "/users/{id}?importReportMode=ERRORS",
+            peter.getUid(),
+            Body("[{'op': 'replace', 'path': '/phoneNumber', 'value': '111111111'}]")));
+    assertStatus(
+        HttpStatus.CONFLICT,
+        PATCH(
+            "/users/{id}?importReportMode=ERRORS",
+            peter.getUid(),
+            Body("[{'op': 'replace', 'path': '/phoneNumber', 'value': null}]")));
   }
 
   @Test

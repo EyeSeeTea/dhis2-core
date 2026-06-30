@@ -38,13 +38,15 @@ public enum TwoFactorType {
   // Enabled states
   TOTP_ENABLED,
   EMAIL_ENABLED,
+  SMS_ENABLED,
 
   // Enrolling states
   ENROLLING_TOTP, // User is in the process of enrolling in TOTP 2FA
-  ENROLLING_EMAIL; // User is in the process of enrolling in email-based 2FA
+  ENROLLING_EMAIL, // User is in the process of enrolling in email-based 2FA
+  ENROLLING_SMS; // User is in the process of enrolling in SMS-based 2FA
 
   public boolean isEnrolling() {
-    return this == ENROLLING_TOTP || this == ENROLLING_EMAIL;
+    return this == ENROLLING_TOTP || this == ENROLLING_EMAIL || this == ENROLLING_SMS;
   }
 
   public TwoFactorType getEnabledType() {
@@ -52,12 +54,14 @@ public enum TwoFactorType {
       return TOTP_ENABLED;
     } else if (this == ENROLLING_EMAIL) {
       return EMAIL_ENABLED;
+    } else if (this == ENROLLING_SMS) {
+      return SMS_ENABLED;
     } else {
       return this;
     }
   }
 
   public boolean isEnabled() {
-    return this == TOTP_ENABLED || this == EMAIL_ENABLED;
+    return this == TOTP_ENABLED || this == EMAIL_ENABLED || this == SMS_ENABLED;
   }
 }

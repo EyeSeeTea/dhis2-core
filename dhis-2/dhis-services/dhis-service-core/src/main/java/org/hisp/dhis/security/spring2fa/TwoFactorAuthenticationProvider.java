@@ -29,10 +29,8 @@
  */
 package org.hisp.dhis.security.spring2fa;
 
-import static org.hisp.dhis.security.twofa.TwoFactorAuthService.TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME;
 import static org.hisp.dhis.security.twofa.TwoFactorAuthUtils.isValid2FACode;
 
-import java.util.Set;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import lombok.extern.slf4j.Slf4j;
@@ -107,9 +105,6 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
     // Validate that the user is not configured for external auth only
     checkExternalAuth(userDetails, username);
 
-    // If the user’s role requires 2FA enrollment but they haven’t set it up, throw an exception.
-    checkTwoFactorEnrolment(userDetails);
-
     // Handle two-factor authentication validations.
     checkTwoFactorAuthentication(auth, userDetails);
 
@@ -135,15 +130,6 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
     }
   }
 
-  private void checkTwoFactorEnrolment(UserDetails userDetails) {
-    boolean has2FARestriction =
-        userDetails.hasAnyRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
-    if (!userDetails.isTwoFactorEnabled() && has2FARestriction) {
-      throw new TwoFactorAuthenticationEnrolmentException(
-          "User must setup two-factor authentication first before logging in");
-    }
-  }
-
   private void checkTwoFactorAuthentication(Authentication auth, UserDetails userDetails) {
     if (!userDetails.isTwoFactorEnabled()) {
       return; // Nothing to do if 2FA is not enabled.
@@ -165,6 +151,7 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
   private boolean isTwoFactorTypeEnabled(TwoFactorType type) {
     return switch (type) {
       case EMAIL_ENABLED -> configurationProvider.isEnabled(ConfigurationKey.EMAIL_2FA_ENABLED);
+      case SMS_ENABLED -> configurationProvider.isEnabled(ConfigurationKey.SMS_2FA_ENABLED);
       case TOTP_ENABLED -> configurationProvider.isEnabled(ConfigurationKey.TOTP_2FA_ENABLED);
       default -> false;
     };
@@ -180,6 +167,11 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
       throw new TwoFactorCodeSentException(ErrorCode.E3051.getMessage(), type);
     }
 
+    if (type == TwoFactorType.SMS_ENABLED && StringUtils.isBlank(code)) {
+      sendSMS2FACode(userDetails);
+      throw new TwoFactorCodeSentException(ErrorCode.E3151.getMessage(), type);
+    }
+
     // If the code is blank (null, empty, or only whitespace), reject the login.
     if (StringUtils.isBlank(code)) {
       throw new TwoFactorAuthenticationException(ErrorCode.E3023.getMessage(), type);
@@ -190,14 +182,32 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
       throw new TwoFactorAuthenticationException(ErrorCode.E3023.getMessage(), type);
     }
     // If no exception is thrown, the 2FA code is valid.
+    // Clear the rate limiting cache on successful 2FA authentication.
+    userService.reset2FACodeSendAttempts(userDetails.getUsername());
   }
 
   private void sendEmail2FACode(UserDetails userDetails) {
     try {
       twoFactorAuthService.sendEmail2FACode(userDetails.getUsername());
+    } catch (TwoFactorCodeSentRateLimitException ex) {
+      throw ex;
+    } catch (TwoFactorCodeDeliveryFailedException ex) {
+      throw ex;
+    } catch (ConflictException e) {
+      throw new TwoFactorCodeSentException(e.getMessage(), TwoFactorType.EMAIL_ENABLED);
+    }
+  }
+
+  private void sendSMS2FACode(UserDetails userDetails) {
+    try {
+      twoFactorAuthService.sendSMS2FACode(userDetails.getUsername());
+    } catch (TwoFactorCodeSentRateLimitException ex) {
+      throw ex;
+    } catch (TwoFactorCodeDeliveryFailedException ex) {
+      throw ex;
     } catch (ConflictException e) {
       throw new TwoFactorAuthenticationException(
-          ErrorCode.E3049.getMessage(), TwoFactorType.EMAIL_ENABLED);
+          ErrorCode.E3149.getMessage(), TwoFactorType.SMS_ENABLED);
     }
   }
 }

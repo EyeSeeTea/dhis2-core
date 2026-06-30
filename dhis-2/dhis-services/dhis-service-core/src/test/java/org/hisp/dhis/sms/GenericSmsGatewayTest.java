@@ -40,6 +40,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.core.io.JsonStringEncoder;
 import com.google.common.collect.Sets;
 import java.net.URI;
 import java.util.Arrays;
@@ -88,6 +89,7 @@ class GenericSmsGatewayTest {
       "to=${recipients}&message=${text}&user=${user}&pass=${password}";
 
   private static final String TEXT = "HI DHIS2";
+  private static final String JSON_TEXT = "HI \"DHIS2\"\nNEXT";
 
   private static final String SUBJECT = "Greeting";
 
@@ -146,13 +148,17 @@ class GenericSmsGatewayTest {
 
   @Test
   void testSendSms_Json() {
-    strSubstitutor = new StringSubstitutor(valueStore);
+    Map<String, String> jsonValueStore = new HashMap<>(valueStore);
+    jsonValueStore.put(
+        SmsGateway.KEY_TEXT, new String(JsonStringEncoder.getInstance().quoteAsString(JSON_TEXT)));
+    strSubstitutor = new StringSubstitutor(jsonValueStore);
     body = strSubstitutor.replace(CONFIG_TEMPLATE_JSON);
 
     gatewayConfig.getParameters().clear();
     gatewayConfig.setParameters(Arrays.asList(username, password));
     gatewayConfig.setContentType(ContentType.APPLICATION_JSON);
     gatewayConfig.setConfigurationTemplate(CONFIG_TEMPLATE_JSON);
+    gatewayConfig.setSendUrlParameters(false);
 
     ResponseEntity<String> responseEntity = new ResponseEntity<>("success", HttpStatus.OK);
 
@@ -160,7 +166,7 @@ class GenericSmsGatewayTest {
             any(URI.class), any(HttpMethod.class), any(HttpEntity.class), eq(String.class)))
         .thenReturn(responseEntity);
 
-    assertThat(subject.send(SUBJECT, TEXT, RECIPIENTS, gatewayConfig).isOk(), is(true));
+    assertThat(subject.send(SUBJECT, JSON_TEXT, RECIPIENTS, gatewayConfig).isOk(), is(true));
 
     verify(restTemplate)
         .exchange(
@@ -208,6 +214,7 @@ class GenericSmsGatewayTest {
     gatewayConfig.setParameters(Arrays.asList(username, password));
     gatewayConfig.setContentType(ContentType.FORM_URL_ENCODED);
     gatewayConfig.setConfigurationTemplate(CONFIG_TEMPLATE_URL_ENCODED);
+    gatewayConfig.setSendUrlParameters(true);
 
     body = strSubstitutor.replace(CONFIG_TEMPLATE_URL_ENCODED);
 

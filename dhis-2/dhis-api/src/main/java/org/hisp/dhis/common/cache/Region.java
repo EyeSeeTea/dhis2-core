@@ -43,6 +43,7 @@ public enum Region {
   userAccountRecoverAttempt,
   userFailedLoginAttempt,
   twoFaDisableFailedAttempt,
+  twoFACodeSentAttempt,
   programOwner,
   programTempOwner,
   currentUserGroupInfoCache,

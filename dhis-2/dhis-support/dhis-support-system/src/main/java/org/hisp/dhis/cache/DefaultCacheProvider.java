@@ -204,6 +204,15 @@ public class DefaultCacheProvider implements CacheProvider {
   }
 
   @Override
+  public <V> Cache<V> createTwoFACodeSentAttemptCache(V defaultValue) {
+    return registerCache(
+        this.<V>newBuilder()
+            .forRegion(Region.twoFACodeSentAttempt.name())
+            .expireAfterWrite(15, MINUTES)
+            .withDefaultValue(defaultValue));
+  }
+
+  @Override
   public <V> Cache<V> createProgramOwnerCache() {
     return registerCache(
         this.<V>newBuilder()

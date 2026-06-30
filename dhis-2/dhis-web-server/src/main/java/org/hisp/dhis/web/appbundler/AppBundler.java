@@ -35,8 +35,10 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.io.UncheckedIOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -52,6 +54,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 import javax.annotation.Nonnull;
 import org.hisp.dhis.appmanager.AppBundleInfo;
 import org.hisp.dhis.appmanager.AppBundleInfo.BundledAppInfo;
@@ -63,6 +66,7 @@ import org.hisp.dhis.appmanager.AppBundleInfo.BundledAppInfo;
 public class AppBundler {
   // Regex to parse standard GitHub URL: https://github.com/owner/repo#ref
   private static final String DEFAULT_BRANCH = "master";
+  private static final String LOCAL_APP_PREFIX = "local:";
   private static final Pattern GITHUB_URL_PATTERN =
       Pattern.compile("^https://github\\.com/([^/]+)/([^/#]+)(?:#(.+))?$");
   private static final int DOWNLOAD_POOL_SIZE = 30; // Number of concurrent downloads
@@ -109,7 +113,26 @@ public class AppBundler {
    * @param codeloadUrl The converted URL for downloading the ZIP archive.
    */
   private record AppGithubRepo(
-      String owner, String repo, String ref, String originalUrl, String codeloadUrl) {}
+      String owner, String repo, String ref, String originalUrl, String codeloadUrl)
+      implements AppSource {
+    @Override
+    public String appName() {
+      return repo;
+    }
+  }
+
+  private record LocalAppSource(Path localPath, String appName, String originalUrl)
+      implements AppSource {
+    Path buildAppPath() {
+      return localPath.resolve("build").resolve("app");
+    }
+  }
+
+  private interface AppSource {
+    String appName();
+
+    String originalUrl();
+  }
 
   /**
    * Executes the app bundling process.
@@ -126,12 +149,12 @@ public class AppBundler {
     Path etagsDirPath = artifactDirPath.resolve(ETAGS_DIR_NAME);
     Files.createDirectories(etagsDirPath);
 
-    List<AppGithubRepo> appRepoInfos = parseAppListUrls(appListFilePath);
+    List<AppSource> appSources = parseAppSources(appListFilePath);
 
-    info("Found {} valid apps to bundle", appRepoInfos.size());
+    info("Found {} valid apps to bundle", appSources.size());
 
-    // Download each app in parallel
-    List<BundledAppInfo> downloadedApps = downloadApps(appRepoInfos, artifactDirPath, etagsDirPath);
+    // Prepare each app in parallel, either from GitHub or a local build/app directory
+    List<BundledAppInfo> downloadedApps = prepareApps(appSources, artifactDirPath, etagsDirPath);
 
     downloadedApps.forEach(bundleInfo::addApp);
 
@@ -183,14 +206,29 @@ public class AppBundler {
         try (ZipFile zipFile = new ZipFile(appPath.toFile())) {
           ZipEntry buildInfoEntry = findEntryByFilename(zipFile, "BUILD_INFO");
           ZipEntry manifestEntry = findEntryByFilename(zipFile, "package.json");
+          ZipEntry webAppManifestEntry = findEntryByFilename(zipFile, "manifest.webapp");
 
           if (manifestEntry != null) {
             String manifestContent =
                 new String(
                     zipFile.getInputStream(manifestEntry).readAllBytes(), StandardCharsets.UTF_8);
             JsonNode manifestNode = OBJECT_MAPPER.readTree(manifestContent);
-            String version = manifestNode.get("version").asText();
-            app.setVersion(version);
+            JsonNode versionNode = manifestNode.get("version");
+            if (versionNode != null && !versionNode.asText().isBlank()) {
+              app.setVersion(versionNode.asText());
+            }
+          }
+
+          if (app.getVersion() == null && webAppManifestEntry != null) {
+            String webAppManifestContent =
+                new String(
+                    zipFile.getInputStream(webAppManifestEntry).readAllBytes(),
+                    StandardCharsets.UTF_8);
+            JsonNode webAppManifestNode = OBJECT_MAPPER.readTree(webAppManifestContent);
+            JsonNode versionNode = webAppManifestNode.get("version");
+            if (versionNode != null && !versionNode.asText().isBlank()) {
+              app.setVersion(versionNode.asText());
+            }
           }
 
           if (buildInfoEntry != null) {
@@ -203,6 +241,14 @@ public class AppBundler {
               app.setCommitUrl(info[2].trim());
             }
           }
+
+          if ("local".equals(app.getBranch())) {
+            info(
+                "Bundled local app metadata: {}.zip (version: {}, source: {})",
+                app.getName(),
+                app.getVersion() != null ? app.getVersion() : "unknown",
+                app.getUrl());
+          }
         } catch (IOException e) {
           error("Error opening zip file for app {}: {}", app.getName(), e, e.getMessage());
         }
@@ -210,20 +256,20 @@ public class AppBundler {
     }
   }
 
-  private List<BundledAppInfo> downloadApps(
-      List<AppGithubRepo> appRepoInfos, Path artifactDirPath, Path etagDirPath) {
+  private List<BundledAppInfo> prepareApps(
+      List<AppSource> appSources, Path artifactDirPath, Path etagDirPath) {
     ForkJoinPool customThreadPool = new ForkJoinPool(DOWNLOAD_POOL_SIZE);
     try {
       return customThreadPool
           .submit(
               () ->
-                  appRepoInfos.parallelStream()
+                  appSources.parallelStream()
                       .map(
-                          repoInfo -> {
+                          appSource -> {
                             try {
-                              return downloadApp(repoInfo, artifactDirPath, etagDirPath);
+                              return prepareApp(appSource, artifactDirPath, etagDirPath);
                             } catch (IOException e) {
-                              // error is logged in downloadApp()
+                              // error is logged in prepareApp()
                               return null;
                             }
                           })
@@ -335,15 +381,24 @@ public class AppBundler {
    * @return a list of AppRepoInfo objects
    * @throws IOException if there's an error reading the file
    */
-  private List<AppGithubRepo> parseAppListUrls(String appListPath) throws IOException {
+  private List<AppSource> parseAppSources(String appListPath) throws IOException {
     List<String> rawUrls =
         OBJECT_MAPPER.readValue(
             new File(appListPath),
             OBJECT_MAPPER.getTypeFactory().constructCollectionType(List.class, String.class));
 
-    List<AppGithubRepo> appInfos = new ArrayList<>();
+    List<AppSource> appSources = new ArrayList<>();
 
     for (String rawUrl : rawUrls) {
+      if (isLocalAppSpec(rawUrl)) {
+        try {
+          appSources.add(parseLocalAppSource(rawUrl));
+        } catch (IOException e) {
+          error("Skipping local app due to invalid local app configuration: {}", rawUrl);
+        }
+        continue;
+      }
+
       Matcher matcher = GITHUB_URL_PATTERN.matcher(rawUrl);
       if (matcher.matches()) {
         String owner = matcher.group(1);
@@ -352,16 +407,63 @@ public class AppBundler {
 
         String codeloadUrl = convertToCodeloadUrl(rawUrl);
         if (codeloadUrl != null) {
-          appInfos.add(new AppGithubRepo(owner, repo, ref, rawUrl, codeloadUrl));
+          appSources.add(new AppGithubRepo(owner, repo, ref, rawUrl, codeloadUrl));
         } else {
           error("Skipping app due to failed conversion from URL: {}", rawUrl);
         }
       } else {
-        error("Skipping app due to invalid GitHub URL format: {}", rawUrl);
+        error(
+            "Skipping app due to invalid app specification. Expected GitHub URL or local path: {}",
+            rawUrl);
       }
     }
-    info("Successfully parsed {} app URLs out of {}", appInfos.size(), rawUrls.size());
-    return appInfos;
+    info("Successfully parsed {} app specs out of {}", appSources.size(), rawUrls.size());
+    return appSources;
+  }
+
+  private boolean isLocalAppSpec(String rawUrl) {
+    return rawUrl.startsWith(LOCAL_APP_PREFIX)
+        || rawUrl.startsWith("/")
+        || rawUrl.startsWith("./")
+        || rawUrl.startsWith("../");
+  }
+
+  private LocalAppSource parseLocalAppSource(String rawUrl) throws IOException {
+    String localPathString =
+        rawUrl.startsWith(LOCAL_APP_PREFIX) ? rawUrl.substring(LOCAL_APP_PREFIX.length()) : rawUrl;
+
+    Path localPath = Path.of(localPathString);
+    if (!localPath.isAbsolute()) {
+      localPath = Path.of("").toAbsolutePath().resolve(localPath).normalize();
+    }
+
+    if (!Files.isDirectory(localPath)) {
+      throw new IOException("Local app path does not exist or is not a directory: " + localPath);
+    }
+
+    Path packageJsonPath = localPath.resolve("package.json");
+    if (!Files.exists(packageJsonPath)) {
+      throw new IOException("package.json not found in local app: " + localPath);
+    }
+
+    Path buildAppPath = localPath.resolve("build").resolve("app");
+    if (!Files.isDirectory(buildAppPath)) {
+      throw new IOException("build/app directory not found in local app: " + localPath);
+    }
+
+    JsonNode packageJson = OBJECT_MAPPER.readTree(packageJsonPath.toFile());
+    JsonNode packageNameNode = packageJson.get("name");
+    if (packageNameNode == null || packageNameNode.asText().isBlank()) {
+      throw new IOException("Local app package.json is missing a non-empty name: " + localPath);
+    }
+
+    String appName = normalizeLocalAppName(packageNameNode.asText());
+
+    return new LocalAppSource(localPath, appName, LOCAL_APP_PREFIX + localPath);
+  }
+
+  private String normalizeLocalAppName(String packageName) {
+    return packageName.replaceFirst("^@dhis2/", "");
   }
 
   /**
@@ -375,7 +477,20 @@ public class AppBundler {
    * @return the downloaded AppBundleInfo.AppInfo object containing ETag etc.
    * @throws IOException if there's an error downloading the app
    */
-  private BundledAppInfo downloadApp(AppGithubRepo repoInfo, Path targetDir, Path etagsDir)
+  private BundledAppInfo prepareApp(AppSource appSource, Path targetDir, Path etagsDir)
+      throws IOException {
+    if (appSource instanceof LocalAppSource localAppSource) {
+      return bundleLocalApp(localAppSource, targetDir);
+    }
+
+    if (appSource instanceof AppGithubRepo repoInfo) {
+      return downloadGithubApp(repoInfo, targetDir, etagsDir);
+    }
+
+    throw new IllegalArgumentException("Unsupported app source: " + appSource);
+  }
+
+  private BundledAppInfo downloadGithubApp(AppGithubRepo repoInfo, Path targetDir, Path etagsDir)
       throws IOException {
     BundledAppInfo appBundleResultInfo = new BundledAppInfo();
     appBundleResultInfo.setName(repoInfo.repo());
@@ -407,6 +522,55 @@ public class AppBundler {
     }
 
     return appBundleResultInfo;
+  }
+
+  private BundledAppInfo bundleLocalApp(LocalAppSource localAppSource, Path targetDir)
+      throws IOException {
+    Path zipFilePath = targetDir.resolve(localAppSource.appName() + ".zip");
+    createLocalAppZip(localAppSource, zipFilePath);
+
+    BundledAppInfo appBundleResultInfo = new BundledAppInfo();
+    appBundleResultInfo.setName(localAppSource.appName());
+    appBundleResultInfo.setUrl(localAppSource.originalUrl());
+    appBundleResultInfo.setBranch("local");
+
+    info("Bundled local app: {} from {}", zipFilePath.getFileName(), localAppSource.localPath());
+
+    return appBundleResultInfo;
+  }
+
+  private void createLocalAppZip(LocalAppSource localAppSource, Path zipFilePath)
+      throws IOException {
+    try (OutputStream outputStream = Files.newOutputStream(zipFilePath);
+        ZipOutputStream zipOutputStream = new ZipOutputStream(outputStream);
+        var paths = Files.walk(localAppSource.buildAppPath()).sorted()) {
+      String topLevelFolder = localAppSource.appName() + "/";
+
+      paths
+          .filter(path -> !path.equals(localAppSource.buildAppPath()))
+          .forEach(
+              path -> {
+                String relativePath =
+                    localAppSource.buildAppPath().relativize(path).toString().replace('\\', '/');
+                String entryName =
+                    Files.isDirectory(path)
+                        ? topLevelFolder + relativePath + "/"
+                        : topLevelFolder + relativePath;
+                ZipEntry zipEntry = new ZipEntry(entryName);
+
+                try {
+                  zipOutputStream.putNextEntry(zipEntry);
+                  if (Files.isRegularFile(path)) {
+                    Files.copy(path, zipOutputStream);
+                  }
+                  zipOutputStream.closeEntry();
+                } catch (IOException e) {
+                  throw new UncheckedIOException(e);
+                }
+              });
+    } catch (UncheckedIOException e) {
+      throw e.getCause();
+    }
   }
 
   private static @Nonnull HttpURLConnection getHttpURLConnection(String fileUrl)

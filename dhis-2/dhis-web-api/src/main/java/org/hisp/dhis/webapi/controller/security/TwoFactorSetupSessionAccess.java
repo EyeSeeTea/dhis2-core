@@ -29,47 +29,37 @@
  */
 package org.hisp.dhis.webapi.controller.security;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import org.hisp.dhis.common.OpenApi;
+import static org.hisp.dhis.security.twofa.TwoFactorAuthService.TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME;
 
-/**
- * @author Morten Svanæs <msvanaes@dhis2.org>
- */
-@NoArgsConstructor
-@AllArgsConstructor
-@Getter
-@Builder
-public class LoginResponse {
-  @Getter
-  @OpenApi.Shared(name = "LoginResponseStatus")
-  public enum STATUS {
-    SUCCESS("loginSuccess"),
-    ACCOUNT_DISABLED("accountDisabled"),
-    ACCOUNT_LOCKED("accountLocked"),
-    ACCOUNT_EXPIRED("accountExpired"),
-    PASSWORD_EXPIRED("passwordExpired"),
-    EMAIL_TWO_FACTOR_CODE_SENT("emailTwoFactorCodeSent"),
-    SMS_TWO_FACTOR_CODE_SENT("smsTwoFactorCodeSent"),
-    INCORRECT_TWO_FACTOR_CODE_TOTP("incorrectTwoFactorCodeTOTP"),
-    INCORRECT_TWO_FACTOR_CODE_EMAIL("incorrectTwoFactorCodeEmail"),
-    INCORRECT_TWO_FACTOR_CODE_SMS("incorrectTwoFactorCodeSMS"),
-    REQUIRES_TWO_FACTOR_ENROLMENT("requiresTwoFactorEnrolment"),
-    TWO_FACTOR_MANY_SEND_ATTEMPTS("twoFactorManySendAttempts"),
-    TWO_FACTOR_CODE_DELIVERY_FAILED("twoFactorCodeDeliveryFailed");
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpSession;
+import java.util.Set;
+import org.hisp.dhis.user.UserDetails;
 
-    private final String keyName;
-    private final String defaultValue;
+public final class TwoFactorSetupSessionAccess {
+  public static final String SESSION_KEY = "2FA_SETUP_REQUIRED";
 
-    STATUS(String keyName) {
-      this.keyName = keyName;
-      this.defaultValue = null;
+  private TwoFactorSetupSessionAccess() {}
+
+  public static boolean requiresTwoFactorEnrolment(UserDetails userDetails) {
+    boolean has2FARestriction =
+        userDetails.hasAnyRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
+    return has2FARestriction && !userDetails.isTwoFactorEnabled();
+  }
+
+  public static void markRequired(HttpServletRequest request) {
+    request.getSession(true).setAttribute(SESSION_KEY, Boolean.TRUE);
+  }
+
+  public static void clear(HttpServletRequest request) {
+    HttpSession session = request.getSession(false);
+    if (session != null) {
+      session.removeAttribute(SESSION_KEY);
     }
   }
 
-  @JsonProperty private STATUS loginStatus;
-  @JsonProperty private String redirectUrl;
+  public static boolean isRequired(HttpServletRequest request) {
+    HttpSession session = request.getSession(false);
+    return session != null && Boolean.TRUE.equals(session.getAttribute(SESSION_KEY));
+  }
 }

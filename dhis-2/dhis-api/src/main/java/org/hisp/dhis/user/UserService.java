@@ -557,6 +557,28 @@ public interface UserService {
   void registerSuccess2FADisable(String username);
 
   /**
+   * Register a 2FA code sent attempt for the given user account.
+   *
+   * @param username the username.
+   */
+  void register2FACodeSentAttempt(String username);
+
+  /**
+   * If the user has sent 2FA codes more than 4 times in the last 15 minutes, return true.
+   *
+   * @param username the username.
+   * @return true if 2FA code sending is rate-limited.
+   */
+  boolean is2FACodeSendingLocked(String username);
+
+  /**
+   * Reset the 2FA code sent attempts for the given user account.
+   *
+   * @param username the username.
+   */
+  void reset2FACodeSendAttempts(String username);
+
+  /**
    * Get linked user accounts for the given user.
    *
    * @param actingUser the acting/current user.

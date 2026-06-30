@@ -29,11 +29,16 @@
  */
 package org.hisp.dhis.webapi.controller;
 
+import static org.hisp.dhis.external.conf.ConfigurationKey.EMAIL_2FA_ENABLED;
+import static org.hisp.dhis.external.conf.ConfigurationKey.SMS_2FA_ENABLED;
+import static org.hisp.dhis.external.conf.ConfigurationKey.TOTP_2FA_ENABLED;
 import static org.hisp.dhis.http.HttpAssertions.assertStatus;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.http.HttpStatus;
 import org.hisp.dhis.jsontree.JsonArray;
 import org.hisp.dhis.jsontree.JsonObject;
@@ -51,6 +56,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Transactional
 class ConfigurationControllerTest extends PostgresControllerIntegrationTestBase {
+
+  @Autowired private DhisConfigurationProvider config;
 
   @Autowired private PeriodService periodService;
 
@@ -204,6 +211,21 @@ class ConfigurationControllerTest extends PostgresControllerIntegrationTestBase 
         GET("/configuration/infrastructuralIndicators").content(HttpStatus.OK).as(JsonObject.class);
     assertEquals(indicatorGroupId, indicatorGroup.getString("id").string());
     assertEquals("Test Infrastructure Group", indicatorGroup.getString("name").string());
+  }
+
+  @Test
+  @DisplayName("GET /configuration/twoFactorMethods should include sms2faEnabled")
+  void testGetTwoFactorMethods() {
+    config.getProperties().put(TOTP_2FA_ENABLED.getKey(), "off");
+    config.getProperties().put(EMAIL_2FA_ENABLED.getKey(), "on");
+    config.getProperties().put(SMS_2FA_ENABLED.getKey(), "on");
+
+    JsonObject response =
+        GET("/configuration/twoFactorMethods").content(HttpStatus.OK).as(JsonObject.class);
+
+    assertFalse(response.getBoolean("totp2faEnabled").booleanValue());
+    assertTrue(response.getBoolean("email2faEnabled").booleanValue());
+    assertTrue(response.getBoolean("sms2faEnabled").booleanValue());
   }
 
   @Test

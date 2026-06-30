@@ -35,6 +35,7 @@ import static org.springframework.http.MediaType.APPLICATION_OCTET_STREAM_VALUE;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Strings;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.Base64;
@@ -86,6 +87,14 @@ public class TwoFactorController {
     twoFactorAuthService.enrollEmail2FA(currentUser.getUsername());
     return ok(
         "The user has enrolled in email-based 2FA, a code was generated and sent successfully to the user's email");
+  }
+
+  @PostMapping(value = "/enrollSMS2FA")
+  @ResponseStatus(HttpStatus.OK)
+  public WebMessage enrollSMS2FA(@CurrentUser User currentUser) throws ConflictException {
+    twoFactorAuthService.enrollSMS2FA(currentUser.getUsername());
+    return ok(
+        "The user has enrolled in SMS-based 2FA, a code was generated and sent successfully to the user's phone");
   }
 
   /**
@@ -161,13 +170,16 @@ public class TwoFactorController {
       consumes = {"text/*", "application/*"})
   @ResponseStatus(HttpStatus.OK)
   public WebMessage enable(
-      @RequestBody Map<String, String> body, @CurrentUser(required = true) UserDetails currentUser)
+      @RequestBody Map<String, String> body,
+      HttpServletRequest request,
+      @CurrentUser(required = true) UserDetails currentUser)
       throws ForbiddenException, ConflictException {
     String code = body.get("code");
     if (Strings.isNullOrEmpty(code)) {
       throw new ConflictException(ErrorCode.E3050);
     }
     twoFactorAuthService.enable2FA(currentUser.getUsername(), code, currentUser);
+    TwoFactorSetupSessionAccess.clear(request);
     return ok("2FA was enabled successfully");
   }
 
