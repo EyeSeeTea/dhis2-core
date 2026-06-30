@@ -450,7 +450,58 @@ class AuthenticationControllerTest extends AuthenticationApiTestBase {
             .andReturn()
             .getResponse();
 
-    assertEquals("/dhis-web-login", redirectResponse.getRedirectedUrl());
+    assertEquals("/login/", redirectResponse.getRedirectedUrl());
+  }
+
+  @Test
+  void testLoginWith2FARestrictionAllowsGlobalShellBootstrapResources() throws Exception {
+    User user = createUserWithAuth("requires2faassets", "ALL");
+    UserRole role = user.getUserRoles().iterator().next();
+    role.setRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
+    userService.updateUserRole(role);
+
+    MvcResult loginResult =
+        mvc.perform(
+                post("/api/auth/login")
+                    .contentType("application/json")
+                    .content("{\"username\":\"requires2faassets\",\"password\":\"district\"}"))
+            .andExpect(status().isOk())
+            .andReturn();
+
+    MockHttpSession session = (MockHttpSession) loginResult.getRequest().getSession(false);
+    assertNotNull(session);
+
+    assertBootstrapRequestNotBlocked(session, "/apps/assets/main-test.js");
+    assertBootstrapRequestNotBlocked(session, "/apps/manifest.json");
+    assertBootstrapRequestNotBlocked(session, "/apps/favicon.ico");
+    assertBootstrapRequestNotBlocked(session, "/apps/mstile-150x150.png");
+    assertBootstrapRequestNotBlocked(session, "/apps/service-worker.js");
+    assertBootstrapRequestNotBlocked(session, "/apps/favicon-32x32.png");
+    assertBootstrapRequestNotBlocked(session, "/apps/favicon-16x16.png");
+    assertBootstrapRequestNotBlocked(session, "/apps/favicon-48x48.png");
+    assertBootstrapRequestNotBlocked(session, "/dhis-web-apps/apps-bundle.json");
+    assertBootstrapRequestNotBlocked(session, "/api/43/apps/menu");
+
+    MockHttpServletResponse legacyUserProfileResponse =
+        mvc.perform(
+                get("/dhis-web-user-profile/index.html")
+                    .queryParam("redirect", "false")
+                    .session(session))
+            .andReturn()
+            .getResponse();
+    assertNull(legacyUserProfileResponse.getRedirectedUrl());
+    assertFalse(
+        legacyUserProfileResponse.getStatus() == 403,
+        "Expected unrestricted bootstrap path: /dhis-web-user-profile/index.html?redirect=false");
+  }
+
+  private void assertBootstrapRequestNotBlocked(MockHttpSession session, String path)
+      throws Exception {
+    MockHttpServletResponse response =
+        mvc.perform(get(path).session(session)).andReturn().getResponse();
+
+    assertNull(response.getRedirectedUrl());
+    assertFalse(response.getStatus() == 403, "Expected unrestricted bootstrap path: " + path);
   }
 
   private void loginWith2FACode(String code) {

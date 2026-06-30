@@ -259,7 +259,7 @@ public class AuthenticationController {
     if (enforceVerifiedEmail) {
       UserDetails userDetails = (UserDetails) authentication.getPrincipal();
       if (!userDetails.isEmailVerified()) {
-        return request.getContextPath() + "/dhis-web-user-profile/#/profile";
+        return request.getContextPath() + "/apps/user-profile";
       }
     }
 

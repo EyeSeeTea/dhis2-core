@@ -36,6 +36,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.hisp.dhis.webapi.controller.security.LoginResponse;
 import org.hisp.dhis.webapi.controller.security.TwoFactorSetupSessionAccess;
 import org.springframework.http.HttpMethod;
@@ -45,7 +46,17 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 public class TwoFactorSetupRestrictionFilter extends OncePerRequestFilter {
-  private static final String LOGIN_PAGE_PATH = "/dhis-web-login";
+  private static final String LOGIN_PAGE_PATH = "/login/";
+  private static final String APPS_ASSETS_PATH = "/apps/assets";
+  private static final String APPS_PATH_PREFIX = "/apps/";
+  private static final String DHIS_WEB_APPS_BUNDLE_PATH = "/dhis-web-apps/apps-bundle.json";
+  private static final String LEGACY_USER_PROFILE_APP_PATH = "/dhis-web-user-profile";
+  private static final String USER_PROFILE_APP_PATH = "/apps/user-profile";
+  private static final String LOGIN_APP_API_PATH = "/api/apps/login";
+  private static final String USER_PROFILE_APP_API_PATH = "/api/apps/user-profile";
+  private static final String GLOBAL_SHELL_APP_API_PATH = "/api/apps/global-shell";
+  private static final Pattern GLOBAL_SHELL_TOP_LEVEL_RESOURCE_PATTERN =
+      Pattern.compile("^/apps/[^/]+\\.[^/]+$");
 
   private final ObjectMapper objectMapper;
   private final List<RequestMatcher> allowedRequests;
@@ -80,6 +91,7 @@ public class TwoFactorSetupRestrictionFilter extends OncePerRequestFilter {
             new AntPathRequestMatcher(apiContextPath + "/**/schemas", HttpMethod.GET.name()),
             new AntPathRequestMatcher(apiContextPath + "/**/attributes", HttpMethod.GET.name()),
             new AntPathRequestMatcher(apiContextPath + "/**/apps", HttpMethod.GET.name()),
+            new AntPathRequestMatcher(apiContextPath + "/**/apps/menu", HttpMethod.GET.name()),
             new AntPathRequestMatcher(apiContextPath + "/**/system/styles", HttpMethod.GET.name()),
             new AntPathRequestMatcher(apiContextPath + "/**/locales/ui", HttpMethod.GET.name()),
             new AntPathRequestMatcher(apiContextPath + "/**/locales/db", HttpMethod.GET.name()),
@@ -88,9 +100,22 @@ public class TwoFactorSetupRestrictionFilter extends OncePerRequestFilter {
             new AntPathRequestMatcher(
                 apiContextPath + "/**/account/sendEmailVerification", HttpMethod.POST.name()),
             new AntPathRequestMatcher(apiContextPath + "/**/auth/logout"),
-            new AntPathRequestMatcher("/dhis-web-login/**"),
+            new AntPathRequestMatcher(LOGIN_PAGE_PATH),
+            new AntPathRequestMatcher("/login/**"),
+            new AntPathRequestMatcher(LOGIN_APP_API_PATH),
+            new AntPathRequestMatcher(LOGIN_APP_API_PATH + "/**"),
             new AntPathRequestMatcher("/dhis-web-commons/**"),
-            new AntPathRequestMatcher("/dhis-web-user-profile/**"));
+            new AntPathRequestMatcher(LEGACY_USER_PROFILE_APP_PATH),
+            new AntPathRequestMatcher(LEGACY_USER_PROFILE_APP_PATH + "/**"),
+            new AntPathRequestMatcher(DHIS_WEB_APPS_BUNDLE_PATH),
+            new AntPathRequestMatcher(APPS_ASSETS_PATH),
+            new AntPathRequestMatcher(APPS_ASSETS_PATH + "/**"),
+            new AntPathRequestMatcher(USER_PROFILE_APP_PATH),
+            new AntPathRequestMatcher(USER_PROFILE_APP_PATH + "/**"),
+            new AntPathRequestMatcher(USER_PROFILE_APP_API_PATH),
+            new AntPathRequestMatcher(USER_PROFILE_APP_API_PATH + "/**"),
+            new AntPathRequestMatcher(GLOBAL_SHELL_APP_API_PATH),
+            new AntPathRequestMatcher(GLOBAL_SHELL_APP_API_PATH + "/**"));
   }
 
   @Override
@@ -120,17 +145,34 @@ public class TwoFactorSetupRestrictionFilter extends OncePerRequestFilter {
   }
 
   private boolean isAllowed(HttpServletRequest request) {
+    String path = getContextRelativePath(request);
+
     return blockedRequests.stream().noneMatch(pattern -> pattern.matches(request))
-        && allowedRequests.stream().anyMatch(pattern -> pattern.matches(request));
+        && (allowedRequests.stream().anyMatch(pattern -> pattern.matches(request))
+            || isAllowedGlobalShellResource(path));
+  }
+
+  private boolean isAllowedGlobalShellResource(String path) {
+    return path.startsWith(APPS_ASSETS_PATH + "/")
+        || GLOBAL_SHELL_TOP_LEVEL_RESOURCE_PATTERN.matcher(path).matches();
+  }
+
+  private String getContextRelativePath(HttpServletRequest request) {
+    String requestURI = request.getRequestURI();
+    String contextPath = request.getContextPath();
+    return requestURI.substring(contextPath.length());
   }
 
   private boolean isAppNavigation(HttpServletRequest request) {
-    String requestURI = request.getRequestURI();
-    String contextPath = request.getContextPath();
-    String path = requestURI.substring(contextPath.length());
+    String path = getContextRelativePath(request);
 
     // Don't redirect API requests (they get 403 JSON response)
     if (path.startsWith("/api/") && !path.startsWith("/api/apps/")) {
+      return false;
+    }
+
+    // Allow top-level global-shell files like /apps/favicon.ico while still redirecting /apps/<app>
+    if (path.startsWith(APPS_PATH_PREFIX) && isAllowedGlobalShellResource(path)) {
       return false;
     }
 
