@@ -105,7 +105,6 @@ public class TwoFactorAuthenticationProvider extends DaoAuthenticationProvider {
     // Validate that the user is not configured for external auth only
     checkExternalAuth(userDetails, username);
 
-
     // Handle two-factor authentication validations.
     checkTwoFactorAuthentication(auth, userDetails);
 

@@ -51,7 +51,6 @@ import org.hisp.dhis.security.twofa.TwoFactorAuthService;
 import org.hisp.dhis.user.CurrentUser;
 import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserDetails;
-import org.hisp.dhis.webapi.controller.security.TwoFactorSetupSessionAccess;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;

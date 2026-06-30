@@ -134,7 +134,9 @@ public class TwoFactorAuthService {
    */
   @Transactional
   public void enrollEmail2FA(@Nonnull String username)
-      throws ConflictException, TwoFactorCodeSentRateLimitException, TwoFactorCodeDeliveryFailedException {
+      throws ConflictException,
+          TwoFactorCodeSentRateLimitException,
+          TwoFactorCodeDeliveryFailedException {
     if (userService.is2FACodeSendingLocked(username)) {
       throw new TwoFactorCodeSentRateLimitException(
           ErrorCode.E3199.getMessage(), TwoFactorType.EMAIL_ENABLED);
@@ -169,7 +171,9 @@ public class TwoFactorAuthService {
    */
   @Transactional
   public void enrollSMS2FA(@Nonnull String username)
-      throws ConflictException, TwoFactorCodeSentRateLimitException, TwoFactorCodeDeliveryFailedException {
+      throws ConflictException,
+          TwoFactorCodeSentRateLimitException,
+          TwoFactorCodeDeliveryFailedException {
     if (userService.is2FACodeSendingLocked(username)) {
       throw new TwoFactorCodeSentRateLimitException(
           ErrorCode.E3199.getMessage(), TwoFactorType.SMS_ENABLED);
@@ -253,8 +257,7 @@ public class TwoFactorAuthService {
       sendEmail2FACode(user.getUsername());
       throw new ConflictException(ErrorCode.E3051);
     }
-    if (TwoFactorType.SMS_ENABLED.equals(user.getTwoFactorType())
-        && Strings.isNullOrEmpty(code)) {
+    if (TwoFactorType.SMS_ENABLED.equals(user.getTwoFactorType()) && Strings.isNullOrEmpty(code)) {
       sendSMS2FACode(user.getUsername());
       throw new ConflictException(ErrorCode.E3151);
     }
@@ -310,7 +313,9 @@ public class TwoFactorAuthService {
    */
   @Transactional
   public void sendEmail2FACode(@Nonnull String username)
-      throws ConflictException, TwoFactorCodeSentRateLimitException, TwoFactorCodeDeliveryFailedException {
+      throws ConflictException,
+          TwoFactorCodeSentRateLimitException,
+          TwoFactorCodeDeliveryFailedException {
     if (userService.is2FACodeSendingLocked(username)) {
       throw new TwoFactorCodeSentRateLimitException(
           ErrorCode.E3199.getMessage(), TwoFactorType.EMAIL_ENABLED);
@@ -339,7 +344,9 @@ public class TwoFactorAuthService {
   }
 
   public void sendSMS2FACode(@Nonnull String username)
-      throws ConflictException, TwoFactorCodeSentRateLimitException, TwoFactorCodeDeliveryFailedException {
+      throws ConflictException,
+          TwoFactorCodeSentRateLimitException,
+          TwoFactorCodeDeliveryFailedException {
     if (userService.is2FACodeSendingLocked(username)) {
       throw new TwoFactorCodeSentRateLimitException(
           ErrorCode.E3199.getMessage(), TwoFactorType.SMS_ENABLED);

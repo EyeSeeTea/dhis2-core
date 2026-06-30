@@ -29,8 +29,8 @@
  */
 package org.hisp.dhis.webapi.controller.security;
 
-import static org.hisp.dhis.external.conf.ConfigurationKey.SMS_2FA_ENABLED;
 import static org.hisp.dhis.common.CodeGenerator.generateSecureRandomBytes;
+import static org.hisp.dhis.external.conf.ConfigurationKey.SMS_2FA_ENABLED;
 import static org.hisp.dhis.security.twofa.TwoFactorAuthService.TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -44,8 +44,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Calendar;
 import java.util.Map;
 import java.util.Set;
-import jakarta.servlet.http.Cookie;
-import org.springframework.mock.web.MockHttpSession;
 import lombok.extern.slf4j.Slf4j;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.http.HttpStatus;
@@ -68,6 +66,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -81,6 +80,7 @@ class AuthenticationControllerTest extends AuthenticationApiTestBase {
   @Autowired private DhisConfigurationProvider config;
   @Autowired private SessionRegistry sessionRegistry;
   @Autowired private ObjectMapper objectMapper;
+
   @Autowired
   @Qualifier("smsMessageSender")
   private MessageSender smsMessageSender;
@@ -235,9 +235,7 @@ class AuthenticationControllerTest extends AuthenticationApiTestBase {
     userService.updateUser(admin);
 
     JsonLoginResponse sentCodeResponse =
-        POST(
-                "/auth/login",
-                "{'username':'admin','password':'district','twoFactorCode':''}")
+        POST("/auth/login", "{'username':'admin','password':'district','twoFactorCode':''}")
             .content(HttpStatus.OK)
             .as(JsonLoginResponse.class);
 

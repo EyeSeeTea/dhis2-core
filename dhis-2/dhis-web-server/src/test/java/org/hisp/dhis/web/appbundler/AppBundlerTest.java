@@ -172,8 +172,7 @@ class AppBundlerTest {
           "ZIP should contain package.json for bundle metadata enrichment");
     }
 
-    AppBundleInfo bundleInfo =
-        objectMapper.readValue(bundleInfoFile.toFile(), AppBundleInfo.class);
+    AppBundleInfo bundleInfo = objectMapper.readValue(bundleInfoFile.toFile(), AppBundleInfo.class);
     AppBundleInfo.BundledAppInfo bundledApp = bundleInfo.getApps().get(0);
 
     assertEquals("login-app", bundledApp.getName());
@@ -181,8 +180,7 @@ class AppBundlerTest {
     assertEquals("local", bundledApp.getBranch());
     assertEquals("100.4.99", bundledApp.getVersion());
     assertEquals("2025-08-08T10:00:00Z", bundledApp.getBuildDate());
-    assertEquals(
-        "https://example.org/local-login-app/commit/abc123", bundledApp.getCommitUrl());
+    assertEquals("https://example.org/local-login-app/commit/abc123", bundledApp.getCommitUrl());
   }
 
   @Test
@@ -225,8 +223,7 @@ class AppBundlerTest {
 
     Path bundleInfoFile = Path.of(buildDir).resolve(artifactId).resolve("apps-bundle.json");
 
-    AppBundleInfo bundleInfo =
-        objectMapper.readValue(bundleInfoFile.toFile(), AppBundleInfo.class);
+    AppBundleInfo bundleInfo = objectMapper.readValue(bundleInfoFile.toFile(), AppBundleInfo.class);
     AppBundleInfo.BundledAppInfo bundledApp = bundleInfo.getApps().get(0);
 
     assertEquals("user-profile-app", bundledApp.getName());
