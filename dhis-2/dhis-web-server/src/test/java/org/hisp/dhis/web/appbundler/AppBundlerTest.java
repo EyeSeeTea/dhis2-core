@@ -184,4 +184,52 @@ class AppBundlerTest {
     assertEquals(
         "https://example.org/local-login-app/commit/abc123", bundledApp.getCommitUrl());
   }
+
+  @Test
+  void testAppBundlerBundlesLocalAppsAndReadsVersionFromManifestWebapp() throws IOException {
+    Path localAppDir = tempDir.resolve("user-profile-app-local");
+    Files.createDirectories(localAppDir.resolve("build").resolve("app"));
+
+    ObjectMapper objectMapper = new ObjectMapper();
+    Map<String, String> packageJson =
+        Map.of("name", "user-profile-app", "version", "100.8.99-widp-fork-1");
+
+    objectMapper.writeValue(localAppDir.resolve("package.json").toFile(), packageJson);
+
+    Files.writeString(
+        localAppDir.resolve("build").resolve("app").resolve("manifest.webapp"),
+        """
+        {
+          "version": "100.8.99-widp-fork-1",
+          "name": "Local User Profile App",
+          "launch_path": "/index.html",
+          "activities": {
+            "dhis": {
+              "href": "index.html"
+            }
+          }
+        }
+        """,
+        StandardCharsets.UTF_8);
+    Files.writeString(
+        localAppDir.resolve("build").resolve("app").resolve("index.html"),
+        "<html><body>Local user profile app</body></html>",
+        StandardCharsets.UTF_8);
+
+    objectMapper.writeValue(
+        appListFile, List.of("local:" + localAppDir.toAbsolutePath().normalize()));
+
+    AppBundler bundler =
+        new AppBundler(downloadDir, buildDir, artifactId, appListFile.getAbsolutePath(), "master");
+    bundler.execute();
+
+    Path bundleInfoFile = Path.of(buildDir).resolve(artifactId).resolve("apps-bundle.json");
+
+    AppBundleInfo bundleInfo =
+        objectMapper.readValue(bundleInfoFile.toFile(), AppBundleInfo.class);
+    AppBundleInfo.BundledAppInfo bundledApp = bundleInfo.getApps().get(0);
+
+    assertEquals("user-profile-app", bundledApp.getName());
+    assertEquals("100.8.99-widp-fork-1", bundledApp.getVersion());
+  }
 }

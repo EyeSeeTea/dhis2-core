@@ -206,14 +206,29 @@ public class AppBundler {
         try (ZipFile zipFile = new ZipFile(appPath.toFile())) {
           ZipEntry buildInfoEntry = findEntryByFilename(zipFile, "BUILD_INFO");
           ZipEntry manifestEntry = findEntryByFilename(zipFile, "package.json");
+          ZipEntry webAppManifestEntry = findEntryByFilename(zipFile, "manifest.webapp");
 
           if (manifestEntry != null) {
             String manifestContent =
                 new String(
                     zipFile.getInputStream(manifestEntry).readAllBytes(), StandardCharsets.UTF_8);
             JsonNode manifestNode = OBJECT_MAPPER.readTree(manifestContent);
-            String version = manifestNode.get("version").asText();
-            app.setVersion(version);
+            JsonNode versionNode = manifestNode.get("version");
+            if (versionNode != null && !versionNode.asText().isBlank()) {
+              app.setVersion(versionNode.asText());
+            }
+          }
+
+          if (app.getVersion() == null && webAppManifestEntry != null) {
+            String webAppManifestContent =
+                new String(
+                    zipFile.getInputStream(webAppManifestEntry).readAllBytes(),
+                    StandardCharsets.UTF_8);
+            JsonNode webAppManifestNode = OBJECT_MAPPER.readTree(webAppManifestContent);
+            JsonNode versionNode = webAppManifestNode.get("version");
+            if (versionNode != null && !versionNode.asText().isBlank()) {
+              app.setVersion(versionNode.asText());
+            }
           }
 
           if (buildInfoEntry != null) {
@@ -225,6 +240,14 @@ public class AppBundler {
               app.setBuildDate(info[0].trim());
               app.setCommitUrl(info[2].trim());
             }
+          }
+
+          if ("local".equals(app.getBranch())) {
+            info(
+                "Bundled local app metadata: {}.zip (version: {}, source: {})",
+                app.getName(),
+                app.getVersion() != null ? app.getVersion() : "unknown",
+                app.getUrl());
           }
         } catch (IOException e) {
           error("Error opening zip file for app {}: {}", app.getName(), e, e.getMessage());
