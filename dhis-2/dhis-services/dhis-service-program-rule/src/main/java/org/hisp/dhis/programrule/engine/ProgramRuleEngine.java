@@ -27,6 +27,7 @@
  */
 package org.hisp.dhis.programrule.engine;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -42,14 +43,17 @@ import org.hisp.dhis.program.Program;
 import org.hisp.dhis.programrule.ProgramRule;
 import org.hisp.dhis.programrule.ProgramRuleVariable;
 import org.hisp.dhis.programrule.ProgramRuleVariableService;
+import org.hisp.dhis.rules.api.RuleContextRequirements;
 import org.hisp.dhis.rules.api.RuleEngine;
 import org.hisp.dhis.rules.api.RuleEngineContext;
+import org.hisp.dhis.rules.api.RuleSupplementaryData;
 import org.hisp.dhis.rules.models.RuleEffect;
 import org.hisp.dhis.rules.models.RuleEffects;
 import org.hisp.dhis.rules.models.RuleEnrollment;
 import org.hisp.dhis.rules.models.RuleEvent;
 import org.hisp.dhis.rules.models.RuleValidationResult;
 import org.hisp.dhis.trackedentityattributevalue.TrackedEntityAttributeValue;
+import org.hisp.dhis.user.UserDetails;
 
 /**
  * @author Zubair Asghar
@@ -58,6 +62,15 @@ import org.hisp.dhis.trackedentityattributevalue.TrackedEntityAttributeValue;
 @RequiredArgsConstructor
 public class ProgramRuleEngine {
   private static final String ERROR = "Program cannot be null";
+
+  /**
+   * Holds an enrollment together with its related events and tracked entity attribute values, used
+   * as input for batch rule evaluation.
+   */
+  public record EnrollmentWithEvents(
+      Enrollment enrollment,
+      Set<Event> events,
+      List<TrackedEntityAttributeValue> attributeValues) {}
 
   private final ProgramRuleEntityMapperService programRuleEntityMapperService;
 
@@ -73,51 +86,255 @@ public class ProgramRuleEngine {
 
   @Deprecated(forRemoval = true, since = "2.41")
   public List<RuleEffect> evaluateEvent(
-      Enrollment enrollment, Set<Event> events, List<ProgramRule> rules) {
+      Enrollment enrollment, Set<Event> events, List<ProgramRule> rules, UserDetails user) {
     return evaluateProgramRules(
         enrollment,
         null,
         enrollment.getProgram(),
         Collections.emptyList(),
         getRuleEvents(events, null),
-        rules);
+        rules,
+        user);
   }
 
   @Deprecated(forRemoval = true, since = "2.41")
   public List<RuleEffect> evaluateEvent(
-      Enrollment enrollment, Event event, Set<Event> events, List<ProgramRule> rules) {
+      Enrollment enrollment,
+      Event event,
+      Set<Event> events,
+      List<ProgramRule> rules,
+      UserDetails user) {
     return evaluateProgramRules(
         enrollment,
         event,
         enrollment.getProgram(),
         Collections.emptyList(),
         getRuleEvents(events, event),
-        rules);
+        rules,
+        user);
   }
 
   @Deprecated(forRemoval = true, since = "2.41")
   public List<RuleEffect> evaluateProgramEvent(
-      Event event, Program program, List<ProgramRule> rules) {
+      Event event, Program program, List<ProgramRule> rules, UserDetails user) {
     return evaluateProgramRules(
-        null, null, program, List.of(), getRuleEvents(Set.of(event), null), rules);
+        null, null, program, List.of(), getRuleEvents(Set.of(event), null), rules, user);
   }
 
   public List<RuleEffects> evaluateEnrollmentAndTrackerEvents(
       Enrollment enrollment,
       Set<Event> events,
-      List<TrackedEntityAttributeValue> trackedEntityAttributeValues) {
+      List<TrackedEntityAttributeValue> trackedEntityAttributeValues,
+      UserDetails user) {
     List<ProgramRule> rules = implementableRuleService.getProgramRules(enrollment.getProgram());
     return evaluateProgramRulesForMultipleTrackerObjects(
         getRuleEnrollment(enrollment, trackedEntityAttributeValues),
         enrollment.getProgram(),
         getRuleEvents(events, null),
-        rules);
+        rules,
+        user);
   }
 
-  public List<RuleEffects> evaluateProgramEvents(Set<Event> events, Program program) {
+  /**
+   * Evaluate program rules for multiple enrollments belonging to the same {@link Program}, building
+   * the rule engine context once. Rules are evaluated under the authorization of given {@link
+   * UserDetails}.
+   */
+  public List<RuleEffects> evaluateEnrollmentsAndTrackerEvents(
+      List<EnrollmentWithEvents> enrollmentsWithEvents, Program program, UserDetails user) {
+    if (enrollmentsWithEvents.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<ProgramRule> rules = implementableRuleService.getProgramRules(program);
+    if (rules.isEmpty()) {
+      return Collections.emptyList();
+    }
+    RuleEngineContext context = getRuleEngineContext(program, rules, user);
+    List<RuleEffects> allEffects = new ArrayList<>();
+    for (EnrollmentWithEvents ewc : enrollmentsWithEvents) {
+      try {
+        allEffects.addAll(
+            ruleEngine.evaluateAll(
+                getRuleEnrollment(ewc.enrollment(), ewc.attributeValues()),
+                getRuleEvents(ewc.events(), null),
+                context));
+      } catch (Exception e) {
+        log.error(DebugUtils.getStackTrace(e));
+      }
+    }
+    return allEffects;
+  }
+
+  /**
+   * Evaluate program rules for multiple enrollments belonging to the same {@link Program}, building
+   * the rule engine context once. {@code rules} and {@code constantMap} are pre-fetched by the
+   * caller so they are not re-queried inside the engine.
+   */
+  public List<RuleEffects> evaluateEnrollmentsAndTrackerEvents(
+      List<EnrollmentWithEvents> enrollmentsWithEvents,
+      Program program,
+      UserDetails user,
+      Map<String, String> constantMap,
+      List<ProgramRule> rules) {
+    if (enrollmentsWithEvents.isEmpty() || rules.isEmpty()) {
+      return Collections.emptyList();
+    }
+    RuleEngineContext context = getRuleEngineContext(program, rules, user, constantMap);
+    List<RuleEffects> allEffects = new ArrayList<>();
+    for (EnrollmentWithEvents ewc : enrollmentsWithEvents) {
+      try {
+        allEffects.addAll(
+            ruleEngine.evaluateAll(
+                getRuleEnrollment(ewc.enrollment(), ewc.attributeValues()),
+                getRuleEvents(ewc.events(), null),
+                context));
+      } catch (Exception e) {
+        log.error(DebugUtils.getStackTrace(e));
+      }
+    }
+    return allEffects;
+  }
+
+  /**
+   * Evaluate program rules for multiple enrollments belonging to the same {@link Program}, building
+   * the rule engine context once. {@code rules}, {@code variables}, and {@code constantMap} are
+   * pre-fetched by the caller so they are not re-queried inside the engine.
+   */
+  public List<RuleEffects> evaluateEnrollmentsAndTrackerEvents(
+      List<EnrollmentWithEvents> enrollmentsWithEvents,
+      UserDetails user,
+      Map<String, String> constantMap,
+      List<ProgramRule> rules,
+      List<ProgramRuleVariable> variables) {
+    if (enrollmentsWithEvents.isEmpty() || rules.isEmpty()) {
+      return Collections.emptyList();
+    }
+    RuleEngineContext context = getRuleEngineContext(rules, variables, user, constantMap);
+    List<RuleEffects> allEffects = new ArrayList<>();
+    for (EnrollmentWithEvents ewc : enrollmentsWithEvents) {
+      try {
+        allEffects.addAll(
+            ruleEngine.evaluateAll(
+                getRuleEnrollment(ewc.enrollment(), ewc.attributeValues()),
+                getRuleEvents(ewc.events(), null),
+                context));
+      } catch (Exception e) {
+        log.error(DebugUtils.getStackTrace(e));
+      }
+    }
+    return allEffects;
+  }
+
+  public List<RuleEffects> evaluateProgramEvents(
+      Set<Event> events, Program program, UserDetails user) {
     List<ProgramRule> rules = implementableRuleService.getProgramRules(program);
     return evaluateProgramRulesForMultipleTrackerObjects(
-        null, program, getRuleEvents(events, null), rules);
+        null, program, getRuleEvents(events, null), rules, user);
+  }
+
+  /**
+   * Evaluate program rules for program events (without-registration). {@code rules} and {@code
+   * constantMap} are pre-fetched by the caller so they are not re-queried inside the engine.
+   */
+  public List<RuleEffects> evaluateProgramEvents(
+      Set<Event> events,
+      Program program,
+      UserDetails user,
+      Map<String, String> constantMap,
+      List<ProgramRule> rules) {
+    try {
+      RuleEngineContext ruleEngineContext = getRuleEngineContext(program, rules, user, constantMap);
+      return ruleEngine.evaluateAll(null, getRuleEvents(events, null), ruleEngineContext);
+    } catch (Exception e) {
+      log.error(DebugUtils.getStackTrace(e));
+      return Collections.emptyList();
+    }
+  }
+
+  /**
+   * Evaluate program rules for program events (without-registration). {@code rules}, {@code
+   * variables}, and {@code constantMap} are pre-fetched by the caller so they are not re-queried
+   * inside the engine.
+   */
+  public List<RuleEffects> evaluateProgramEvents(
+      Set<Event> events,
+      UserDetails user,
+      Map<String, String> constantMap,
+      List<ProgramRule> rules,
+      List<ProgramRuleVariable> variables) {
+    try {
+      RuleEngineContext ruleEngineContext =
+          getRuleEngineContext(rules, variables, user, constantMap);
+      return ruleEngine.evaluateAll(null, getRuleEvents(events, null), ruleEngineContext);
+    } catch (Exception e) {
+      log.error(DebugUtils.getStackTrace(e));
+      return Collections.emptyList();
+    }
+  }
+
+  /**
+   * Analyze program rules and variables to determine what context is needed for evaluation. Used by
+   * callers to decide whether to fetch saved events, tracked entity attributes, and org unit groups
+   * before calling the evaluation methods.
+   */
+  public RuleContextRequirements analyzeContextRequirements(
+      List<ProgramRule> programRules, List<ProgramRuleVariable> programRuleVariables) {
+    return ruleEngine.analyzeContextRequirements(
+        programRuleEntityMapperService.toMappedProgramRules(programRules),
+        programRuleEntityMapperService.toMappedProgramRuleVariables(programRuleVariables));
+  }
+
+  /**
+   * Evaluate program rules for multiple enrollments with pre-computed org unit UIDs. The {@code
+   * orgUnitUids} drive the org unit group query in {@link SupplementaryDataProvider}; pass an empty
+   * set when the rule set does not reference org unit groups.
+   */
+  public List<RuleEffects> evaluateEnrollmentsAndTrackerEvents(
+      List<EnrollmentWithEvents> enrollmentsWithEvents,
+      UserDetails user,
+      Map<String, String> constantMap,
+      List<ProgramRule> rules,
+      List<ProgramRuleVariable> variables,
+      Set<String> orgUnitUids) {
+    if (enrollmentsWithEvents.isEmpty() || rules.isEmpty()) {
+      return Collections.emptyList();
+    }
+    RuleEngineContext context =
+        getRuleEngineContext(rules, variables, user, constantMap, orgUnitUids);
+    List<RuleEffects> allEffects = new ArrayList<>();
+    for (EnrollmentWithEvents ewc : enrollmentsWithEvents) {
+      try {
+        allEffects.addAll(
+            ruleEngine.evaluateAll(
+                getRuleEnrollment(ewc.enrollment(), ewc.attributeValues()),
+                getRuleEvents(ewc.events(), null),
+                context));
+      } catch (Exception e) {
+        log.error(DebugUtils.getStackTrace(e));
+      }
+    }
+    return allEffects;
+  }
+
+  /**
+   * Evaluate program rules for program events (without-registration) with pre-computed org unit
+   * UIDs. Pass an empty set when the rule set does not reference org unit groups.
+   */
+  public List<RuleEffects> evaluateProgramEvents(
+      Set<Event> events,
+      UserDetails user,
+      Map<String, String> constantMap,
+      List<ProgramRule> rules,
+      List<ProgramRuleVariable> variables,
+      Set<String> orgUnitUids) {
+    try {
+      RuleEngineContext ruleEngineContext =
+          getRuleEngineContext(rules, variables, user, constantMap, orgUnitUids);
+      return ruleEngine.evaluateAll(null, getRuleEvents(events, null), ruleEngineContext);
+    } catch (Exception e) {
+      log.error(DebugUtils.getStackTrace(e));
+      return Collections.emptyList();
+    }
   }
 
   private List<RuleEffect> evaluateProgramRules(
@@ -126,10 +343,11 @@ public class ProgramRuleEngine {
       Program program,
       List<TrackedEntityAttributeValue> trackedEntityAttributeValues,
       List<RuleEvent> ruleEvents,
-      List<ProgramRule> rules) {
+      List<ProgramRule> rules,
+      UserDetails user) {
 
     try {
-      RuleEngineContext ruleEngineContext = getRuleEngineContext(program, rules);
+      RuleEngineContext ruleEngineContext = getRuleEngineContext(program, rules, user);
 
       return getRuleEngineEvaluation(
           ruleEngineContext, enrollment, event, ruleEvents, trackedEntityAttributeValues);
@@ -143,9 +361,10 @@ public class ProgramRuleEngine {
       RuleEnrollment ruleEnrollment,
       Program program,
       List<RuleEvent> ruleEvents,
-      List<ProgramRule> rules) {
+      List<ProgramRule> rules,
+      UserDetails user) {
     try {
-      RuleEngineContext ruleEngineContext = getRuleEngineContext(program, rules);
+      RuleEngineContext ruleEngineContext = getRuleEngineContext(program, rules, user);
       return ruleEngine.evaluateAll(ruleEnrollment, ruleEvents, ruleEngineContext);
     } catch (Exception e) {
       log.error(DebugUtils.getStackTrace(e));
@@ -199,7 +418,8 @@ public class ProgramRuleEngine {
             programRuleVariableService.getProgramRuleVariable(program)));
   }
 
-  private RuleEngineContext getRuleEngineContext(Program program, List<ProgramRule> programRules) {
+  private RuleEngineContext getRuleEngineContext(
+      Program program, List<ProgramRule> programRules, UserDetails user) {
     List<ProgramRuleVariable> programRuleVariables =
         programRuleVariableService.getProgramRuleVariable(program);
 
@@ -208,8 +428,57 @@ public class ProgramRuleEngine {
             .collect(
                 Collectors.toMap(Map.Entry::getKey, v -> Double.toString(v.getValue().getValue())));
 
-    Map<String, List<String>> supplementaryData =
-        supplementaryDataProvider.getSupplementaryData(programRules);
+    RuleSupplementaryData supplementaryData =
+        supplementaryDataProvider.getSupplementaryData(false, Set.of(), user);
+
+    return new RuleEngineContext(
+        programRuleEntityMapperService.toMappedProgramRules(programRules),
+        programRuleEntityMapperService.toMappedProgramRuleVariables(programRuleVariables),
+        supplementaryData,
+        constantMap);
+  }
+
+  private RuleEngineContext getRuleEngineContext(
+      Program program,
+      List<ProgramRule> programRules,
+      UserDetails user,
+      Map<String, String> constantMap) {
+    List<ProgramRuleVariable> programRuleVariables =
+        programRuleVariableService.getProgramRuleVariable(program);
+
+    RuleSupplementaryData supplementaryData =
+        supplementaryDataProvider.getSupplementaryData(false, Set.of(), user);
+
+    return new RuleEngineContext(
+        programRuleEntityMapperService.toMappedProgramRules(programRules),
+        programRuleEntityMapperService.toMappedProgramRuleVariables(programRuleVariables),
+        supplementaryData,
+        constantMap);
+  }
+
+  private RuleEngineContext getRuleEngineContext(
+      List<ProgramRule> programRules,
+      List<ProgramRuleVariable> programRuleVariables,
+      UserDetails user,
+      Map<String, String> constantMap) {
+    RuleSupplementaryData supplementaryData =
+        supplementaryDataProvider.getSupplementaryData(false, Set.of(), user);
+
+    return new RuleEngineContext(
+        programRuleEntityMapperService.toMappedProgramRules(programRules),
+        programRuleEntityMapperService.toMappedProgramRuleVariables(programRuleVariables),
+        supplementaryData,
+        constantMap);
+  }
+
+  private RuleEngineContext getRuleEngineContext(
+      List<ProgramRule> programRules,
+      List<ProgramRuleVariable> programRuleVariables,
+      UserDetails user,
+      Map<String, String> constantMap,
+      Set<String> orgUnitUids) {
+    RuleSupplementaryData supplementaryData =
+        supplementaryDataProvider.getSupplementaryData(!orgUnitUids.isEmpty(), orgUnitUids, user);
 
     return new RuleEngineContext(
         programRuleEntityMapperService.toMappedProgramRules(programRules),

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2022, University of Oslo
+ * Copyright (c) 2004-2025, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -25,19 +25,23 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.hisp.dhis.fileresource;
+package org.hisp.dhis.tracker.imports.preheat.mappers;
 
-import org.hisp.dhis.common.IdentifiableObjectStore;
+import org.hisp.dhis.program.notification.ProgramNotificationTemplate;
+import org.mapstruct.BeanMapping;
+import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+import org.mapstruct.factory.Mappers;
 
-/**
- * @author Stian Sandvold
- */
-public interface ExternalFileResourceStore extends IdentifiableObjectStore<ExternalFileResource> {
-  /**
-   * Returns a single ExternalFileResource with the given (unique) accessToken.
-   *
-   * @param accessToken unique string belonging to a single ExternalFileResource.
-   * @return ExternalFileResource
-   */
-  ExternalFileResource getExternalFileResourceByAccessToken(String accessToken);
+@Mapper
+public interface ProgramNotificationTemplateMapper
+    extends PreheatMapper<ProgramNotificationTemplate> {
+  ProgramNotificationTemplateMapper INSTANCE =
+      Mappers.getMapper(ProgramNotificationTemplateMapper.class);
+
+  @BeanMapping(ignoreByDefault = true)
+  @Mapping(target = "id")
+  @Mapping(target = "uid")
+  @Mapping(target = "notificationTrigger")
+  ProgramNotificationTemplate map(ProgramNotificationTemplate template);
 }

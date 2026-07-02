@@ -124,7 +124,6 @@ import org.hisp.dhis.expression.Operator;
 import org.hisp.dhis.external.location.DefaultLocationManager;
 import org.hisp.dhis.external.location.LocationManager;
 import org.hisp.dhis.feedback.ErrorCode;
-import org.hisp.dhis.fileresource.ExternalFileResource;
 import org.hisp.dhis.fileresource.FileResource;
 import org.hisp.dhis.fileresource.FileResourceDomain;
 import org.hisp.dhis.hibernate.HibernateService;
@@ -2265,21 +2264,6 @@ public abstract class DhisConvenienceTest {
   }
 
   /**
-   * @param uniqueChar A unique character to identify the object.
-   * @param content The content of the file
-   * @return an externalFileResource object
-   */
-  public static ExternalFileResource createExternalFileResource(char uniqueChar, byte[] content) {
-    FileResource fileResource = createFileResource(uniqueChar, content);
-    ExternalFileResource externalFileResource = new ExternalFileResource();
-
-    externalFileResource.setFileResource(fileResource);
-    fileResource.setAssigned(true);
-    externalFileResource.setAccessToken(String.valueOf(uniqueChar));
-    return externalFileResource;
-  }
-
-  /**
    * @param uniqueCharacter A unique character to identify the object.
    * @param sql A query statement to retreive record/data from database.
    * @return a sqlView instance
@@ -2999,7 +2983,7 @@ public abstract class DhisConvenienceTest {
     entityManager.persist(role);
 
     User user = new User();
-    user.setUid("A_" + CodeGenerator.generateUid().substring(2));
+    user.setUid(CodeGenerator.generateUid());
     user.setFirstName("Admin");
     user.setSurname("User");
     user.setUsername(DEFAULT_USERNAME + "_test_" + CodeGenerator.generateUid());

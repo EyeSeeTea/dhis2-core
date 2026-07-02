@@ -27,68 +27,81 @@
  */
 package org.hisp.dhis.programrule.engine;
 
-import com.google.common.collect.Maps;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
-import javax.annotation.Nonnull;
-import lombok.RequiredArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
-import org.hisp.dhis.organisationunit.OrganisationUnit;
-import org.hisp.dhis.organisationunit.OrganisationUnitGroupService;
-import org.hisp.dhis.programrule.ProgramRule;
-import org.hisp.dhis.user.CurrentUserUtil;
+import java.util.Set;
+import org.hisp.dhis.rules.api.RuleSupplementaryData;
+import org.hisp.dhis.user.UserDetails;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class SupplementaryDataProvider {
-  private static final String USER = "USER";
 
-  private static final String REGEX =
-      "d2:inOrgUnitGroup\\( *(([\\d/\\*\\+\\-%\\. ]+)|"
-          + "( *'[^']*'))*+( *, *(([\\d/\\*\\+\\-%\\. ]+)|'[^']*'))*+ *\\)";
+  /**
+   * For each given org unit, returns the groups it belongs to. Keying by both {@code uid} and
+   * {@code code} lets rule expressions use either identifier in {@code d2:inOrgUnitGroup('...')}.
+   */
+  private static final String ORG_UNIT_GROUP_MEMBERS_SQL =
+      """
+      SELECT oug.uid, oug.code, ou.uid AS ou_uid
+      FROM orgunitgroup oug
+      JOIN orgunitgroupmembers ougm ON ougm.orgunitgroupid = oug.orgunitgroupid
+      JOIN organisationunit ou ON ou.organisationunitid = ougm.organisationunitid
+      WHERE ou.uid = ANY(:orgUnitUids)
+      """;
 
-  private static final Pattern PATTERN = Pattern.compile(REGEX);
+  private final NamedParameterJdbcTemplate jdbcTemplate;
 
-  @Nonnull private final OrganisationUnitGroupService organisationUnitGroupService;
+  @Autowired
+  public SupplementaryDataProvider(
+      @Qualifier("readOnlyJdbcTemplate") org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+    this.jdbcTemplate = new NamedParameterJdbcTemplate(jdbcTemplate);
+  }
 
-  public Map<String, List<String>> getSupplementaryData(List<ProgramRule> programRules) {
-    List<String> orgUnitGroups = new ArrayList<>();
+  SupplementaryDataProvider(NamedParameterJdbcTemplate jdbcTemplate) {
+    this.jdbcTemplate = jdbcTemplate;
+  }
 
-    for (ProgramRule programRule : programRules) {
-      Matcher matcher = PATTERN.matcher(StringUtils.defaultIfBlank(programRule.getCondition(), ""));
+  /**
+   * Builds supplementary data for the rule engine.
+   *
+   * <p>When {@code needsOrgUnitGroups} is {@code true}, queries all org unit groups that contain
+   * any of the given {@code orgUnitUids} and returns a map keyed by both group UID and group code
+   * so that rule expressions can reference groups by either identifier.
+   */
+  public RuleSupplementaryData getSupplementaryData(
+      boolean needsOrgUnitGroups, Set<String> orgUnitUids, UserDetails user) {
+    List<String> userGroups = user.getUserGroupIds().stream().toList();
+    List<String> userRoles = user.getUserRoleIds().stream().toList();
 
-      while (matcher.find()) {
-        orgUnitGroups.add(StringUtils.replace(matcher.group(1), "'", ""));
-      }
+    if (!needsOrgUnitGroups || orgUnitUids.isEmpty()) {
+      return new RuleSupplementaryData(userGroups, userRoles, Collections.emptyMap());
     }
 
-    Map<String, List<String>> supplementaryData = Maps.newHashMap();
+    MapSqlParameterSource params =
+        new MapSqlParameterSource("orgUnitUids", orgUnitUids.toArray(String[]::new));
 
-    if (!orgUnitGroups.isEmpty()) {
-      supplementaryData =
-          orgUnitGroups.stream()
-              .collect(
-                  Collectors.toMap(
-                      g -> g,
-                      g ->
-                          organisationUnitGroupService
-                              .getOrganisationUnitGroup(g)
-                              .getMembers()
-                              .stream()
-                              .map(OrganisationUnit::getUid)
-                              .collect(Collectors.toList())));
-    }
+    Map<String, List<String>> orgUnitGroupData = new HashMap<>();
+    jdbcTemplate.query(
+        ORG_UNIT_GROUP_MEMBERS_SQL,
+        params,
+        rs -> {
+          String groupUid = rs.getString("uid");
+          String groupCode = rs.getString("code");
+          String ouUid = rs.getString("ou_uid");
+          orgUnitGroupData.computeIfAbsent(groupUid, k -> new ArrayList<>()).add(ouUid);
+          if (groupCode != null && !groupCode.isBlank()) {
+            orgUnitGroupData.computeIfAbsent(groupCode, k -> new ArrayList<>()).add(ouUid);
+          }
+        });
 
-    if (CurrentUserUtil.getCurrentUsername() != null) {
-      supplementaryData.put(
-          USER, new ArrayList<>(CurrentUserUtil.getCurrentUserDetails().getUserRoleIds()));
-    }
-
-    return supplementaryData;
+    return new RuleSupplementaryData(userGroups, userRoles, orgUnitGroupData);
   }
 }

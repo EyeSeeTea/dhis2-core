@@ -5,7 +5,7 @@
   <parent>
     <groupId>org.hisp.dhis</groupId>
     <artifactId>dhis-support</artifactId>
-    <version>2.41.8.2-widp-fork-1</version>
+    <version>2.41.9</version>
   </parent>
 
   <artifactId>dhis-support-hibernate</artifactId>
@@ -213,7 +213,7 @@
     <dependency>
       <groupId>org.jetbrains</groupId>
       <artifactId>annotations</artifactId>
-      <version>26.0.2-1</version>
+      <version>26.1.0</version>
     </dependency>
   </dependencies>
 

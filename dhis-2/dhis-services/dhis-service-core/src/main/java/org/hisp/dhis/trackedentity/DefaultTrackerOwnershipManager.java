@@ -31,6 +31,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static org.hisp.dhis.trackedentity.OwnershipCacheUtils.getOwnershipCacheKey;
 import static org.hisp.dhis.trackedentity.OwnershipCacheUtils.getTempOwnershipCacheKey;
 
+import java.util.Date;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -146,6 +147,12 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
 
     User currentUser = userService.getUserByUsername(CurrentUserUtil.getCurrentUsername());
 
+    if (!skipAccessValidation
+        && !orgUnit.isDescendant(currentUser.getTeiSearchOrganisationUnitsWithFallback())) {
+      throw new ForbiddenException(
+          "Tracked entity not transferred. Org unit supplied is not in the user scope.");
+    }
+
     if (hasAccess(currentUser, entityInstance, program) || skipAccessValidation) {
       if (!programService.hasOrgUnit(program, orgUnit)) {
         throw new ForbiddenException(
@@ -154,12 +161,22 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
                 program.getUid(), orgUnit.getUid()));
       }
 
+      if (!aclService.canDataWrite(currentUser, program)) {
+        throw new ForbiddenException(
+            String.format(
+                "Current user doesn't have data write access to the provided program %s.",
+                program.getUid()));
+      }
+
       TrackedEntityProgramOwner teProgramOwner =
           trackedEntityProgramOwnerService.getTrackedEntityProgramOwner(
               entityInstance.getId(), program.getId());
 
       if (teProgramOwner != null) {
         if (!teProgramOwner.getOrganisationUnit().equals(orgUnit)) {
+          entityInstance.setLastUpdated(new Date());
+          trackedEntityService.updateTrackedEntity(entityInstance);
+
           ProgramOwnershipHistory programOwnershipHistory =
               new ProgramOwnershipHistory(
                   program,
@@ -242,6 +259,8 @@ public class DefaultTrackerOwnershipManager implements TrackerOwnershipManager {
           new ProgramTempOwnershipAudit(program, entityInstance, reason, user.getUsername()));
     }
 
+    entityInstance.setLastUpdated(new Date());
+    trackedEntityService.updateTrackedEntity(entityInstance);
     ProgramTempOwner programTempOwner =
         new ProgramTempOwner(
             program, entityInstance, reason, user, TEMPORARY_OWNERSHIP_VALIDITY_IN_HOURS);

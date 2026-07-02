@@ -43,6 +43,7 @@ import org.mapstruct.factory.Mappers;
       TrackedEntityTypeMapper.class,
       ProgramStageMapper.class,
       ProgramTrackedEntityAttributeMapper.class,
+      ProgramNotificationTemplateMapper.class,
       AttributeValueMapper.class,
       SharingMapper.class
     })
@@ -71,6 +72,7 @@ public interface ProgramMapper extends PreheatMapper<Program> {
   @Mapping(target = "completeEventsExpiryDays")
   @Mapping(target = "sharing")
   @Mapping(target = "accessLevel")
+  @Mapping(target = "notificationTemplates")
   Program map(Program program);
 
   Set<ProgramStage> mapProgramStages(Set<ProgramStage> programStages);

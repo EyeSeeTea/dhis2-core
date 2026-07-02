@@ -43,6 +43,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -224,6 +226,11 @@ class TrackerOwnershipManagerTest extends IntegrationTestBase {
 
     defaultParams =
         new TrackedEntityParams(false, TrackedEntityEnrollmentParams.FALSE, false, false);
+
+    User admin = getAdminUser();
+    admin.setTeiSearchOrganisationUnits(Set.of(organisationUnitB));
+    manager.update(admin);
+    injectSecurityContextUser(admin);
   }
 
   @Test
@@ -716,6 +723,10 @@ class TrackerOwnershipManagerTest extends IntegrationTestBase {
   void shouldNotTransferOwnershipWhenOrgUnitNotAssociatedToProgram() {
     OrganisationUnit notAssociatedOrgUnit = createOrganisationUnit('C');
     organisationUnitService.addOrganisationUnit(notAssociatedOrgUnit);
+    User adminUser = getAdminUser();
+    adminUser.setTeiSearchOrganisationUnits(Set.of(notAssociatedOrgUnit));
+    injectSecurityContextUser(adminUser);
+
     Exception exception =
         assertThrows(
             ForbiddenException.class,
@@ -725,6 +736,81 @@ class TrackerOwnershipManagerTest extends IntegrationTestBase {
             "The program %s is not associated to the org unit %s",
             programA.getUid(), notAssociatedOrgUnit.getUid()),
         exception.getMessage());
+  }
+
+  @Test
+  void shouldNotTransferOwnershipWhenUserHasNoDataWriteAccessToProgram() {
+    programA.getSharing().setPublicAccess("rwr-----");
+    programService.updateProgram(programA);
+    userA.setTeiSearchOrganisationUnits(Set.of(organisationUnitB));
+    injectSecurityContextUser(userA);
+
+    Exception exception =
+        assertThrows(
+            ForbiddenException.class,
+            () -> transferOwnership(entityInstanceA1, programA, organisationUnitB));
+    assertEquals(
+        String.format(
+            "Current user doesn't have data write access to the provided program %s.",
+            programA.getUid()),
+        exception.getMessage());
+  }
+
+  @Test
+  void shouldNotTransferOwnershipWhenOrgUnitNotInEffectiveUserScope() {
+    OrganisationUnit outOfScopeOrgUnit = createOrganisationUnit('C');
+    organisationUnitService.addOrganisationUnit(outOfScopeOrgUnit);
+
+    Exception exception =
+        assertThrows(
+            ForbiddenException.class,
+            () -> transferOwnership(entityInstanceA1, programA, outOfScopeOrgUnit));
+    assertEquals(
+        "Tracked entity not transferred. Org unit supplied is not in the user scope.",
+        exception.getMessage());
+  }
+
+  @Test
+  void shouldTransferOwnershipWhenOrgUnitIsDescendantOfUserSearchScope()
+      throws ForbiddenException, BadRequestException, NotFoundException {
+    OrganisationUnit childOfA = createOrganisationUnit('C');
+    childOfA.setParent(organisationUnitA);
+    organisationUnitService.addOrganisationUnit(childOfA);
+    childOfA.updatePath();
+    Set<OrganisationUnit> programOrgUnits = new HashSet<>(programA.getOrganisationUnits());
+    programOrgUnits.add(childOfA);
+    programA.setOrganisationUnits(programOrgUnits);
+    programService.updateProgram(programA);
+    User adminUser = getAdminUser();
+    adminUser.setTeiSearchOrganisationUnits(Set.of(organisationUnitA));
+    userService.updateUser(adminUser);
+    injectSecurityContextUser(adminUser);
+
+    trackerOwnershipAccessManager.transferOwnership(
+        entityInstanceA1, programA, childOfA, false, true);
+
+    TrackedEntityOperationParams operationParams = createOperationParams(userA, programA.getUid());
+    injectSecurityContext(userDetailsA);
+    List<String> trackedEntities = getTrackedEntities(operationParams);
+    assertContainsOnly(List.of(entityInstanceA1.getUid()), trackedEntities);
+  }
+
+  @Test
+  void shouldTransferOwnershipWhenOrgUnitIsInCaptureScopeButNotInSearchScope()
+      throws ForbiddenException, BadRequestException, NotFoundException {
+    User adminUser = getAdminUser();
+    adminUser.setTeiSearchOrganisationUnits(Set.of());
+    adminUser.setOrganisationUnits(Set.of(organisationUnitA));
+    userService.updateUser(adminUser);
+    injectSecurityContextUser(adminUser);
+
+    trackerOwnershipAccessManager.transferOwnership(
+        entityInstanceA1, programA, organisationUnitA, false, true);
+
+    TrackedEntityOperationParams operationParams = createOperationParams(userA, programA.getUid());
+    injectSecurityContext(userDetailsA);
+    List<String> trackedEntities = getTrackedEntities(operationParams);
+    assertContainsOnly(List.of(entityInstanceA1.getUid()), trackedEntities);
   }
 
   @Test
@@ -747,6 +833,49 @@ class TrackerOwnershipManagerTest extends IntegrationTestBase {
     injectSecurityContext(userDetailsA);
 
     assertIsEmpty(getTrackedEntities(operationParams));
+  }
+
+  @Test
+  void shouldUpdateTrackedEntityLastUpdatedWhenOwnershipIsTransferred()
+      throws ForbiddenException, NotFoundException, BadRequestException {
+    userA.setTeiSearchOrganisationUnits(Set.of(organisationUnitB));
+    userService.updateUser(userA);
+    Date lastUpdatedBefore = entityInstanceA1.getLastUpdated();
+
+    assignOwnership(entityInstanceA1, programA, organisationUnitA);
+    transferOwnership(entityInstanceA1, programA, organisationUnitB);
+
+    injectSecurityContextUser(userB);
+    TrackedEntity trackedEntity =
+        trackedEntityService.getTrackedEntity(
+            entityInstanceA1.getUid(), null, TrackedEntityParams.FALSE, false);
+    assertTrue(
+        trackedEntity.getLastUpdated().after(lastUpdatedBefore),
+        () ->
+            String.format(
+                "The field lastUpdated for TrackedEntity %s should be updated after ownership transfer. ",
+                entityInstanceA1.getUid()));
+  }
+
+  @Test
+  void shouldUpdateTrackedEntityLastUpdatedWhenGrantingTemporaryOwnership()
+      throws ForbiddenException, NotFoundException, BadRequestException {
+    userB.setTeiSearchOrganisationUnits(Set.of(organisationUnitA));
+    userService.updateUser(userB);
+    Date lastUpdatedBefore = entityInstanceA1.getLastUpdated();
+
+    trackerOwnershipAccessManager.grantTemporaryOwnership(
+        entityInstanceA1, programA, userB, "test protected program");
+
+    TrackedEntity trackedEntity =
+        trackedEntityService.getTrackedEntity(
+            entityInstanceA1.getUid(), null, TrackedEntityParams.FALSE, false);
+    assertTrue(
+        trackedEntity.getLastUpdated().after(lastUpdatedBefore),
+        () ->
+            String.format(
+                "The field lastUpdated for TrackedEntity %s should be updated after temporary access granted. ",
+                trackedEntity.getUid()));
   }
 
   private void transferOwnership(

@@ -57,8 +57,6 @@ import org.hisp.dhis.dataelement.DataElement;
 import org.hisp.dhis.hibernate.HibernateProxyUtils;
 import org.hisp.dhis.note.Note;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
-import org.hisp.dhis.period.Period;
-import org.hisp.dhis.period.PeriodType;
 import org.hisp.dhis.program.Enrollment;
 import org.hisp.dhis.program.Event;
 import org.hisp.dhis.program.Program;
@@ -71,6 +69,7 @@ import org.hisp.dhis.trackedentity.TrackedEntity;
 import org.hisp.dhis.trackedentity.TrackedEntityAttribute;
 import org.hisp.dhis.trackedentity.TrackedEntityProgramOwnerOrgUnit;
 import org.hisp.dhis.trackedentity.TrackedEntityType;
+import org.hisp.dhis.trackedentity.TrackedEntityTypeAttribute;
 import org.hisp.dhis.tracker.TrackerType;
 import org.hisp.dhis.tracker.imports.TrackerIdScheme;
 import org.hisp.dhis.tracker.imports.TrackerIdSchemeParam;
@@ -98,12 +97,6 @@ public class TrackerPreheat {
   /** Internal map of all default object (like category option combo, etc). */
   private final Map<Class<? extends IdentifiableObject>, IdentifiableObject> defaults =
       new HashMap<>();
-
-  /** All periods available. */
-  @Getter private final Map<String, Period> periodMap = new HashMap<>();
-
-  /** All periodTypes available. */
-  @Getter private final Map<String, PeriodType> periodTypeMap = new HashMap<>();
 
   /**
    * Internal map of category combo + category options (key) to category option combo (value).
@@ -657,6 +650,32 @@ public class TrackerPreheat {
       case EVENT -> getEvent(uid) != null;
       case RELATIONSHIP -> getRelationship(uid) != null;
     };
+  }
+
+  private final Map<String, Set<MetadataIdentifier>> mandatoryProgramAttributes = new HashMap<>();
+
+  private final Map<String, Set<MetadataIdentifier>> mandatoryTetAttributes = new HashMap<>();
+
+  public Set<MetadataIdentifier> getMandatoryProgramAttributes(Program program) {
+    return mandatoryProgramAttributes.computeIfAbsent(
+        program.getUid(),
+        uid ->
+            program.getProgramAttributes().stream()
+                .filter(pa -> Boolean.TRUE.equals(pa.isMandatory()))
+                .map(pa -> idSchemes.toMetadataIdentifier(pa.getAttribute()))
+                .collect(Collectors.toUnmodifiableSet()));
+  }
+
+  public Set<MetadataIdentifier> getMandatoryTrackedEntityTypeAttributes(
+      TrackedEntityType trackedEntityType) {
+    return mandatoryTetAttributes.computeIfAbsent(
+        trackedEntityType.getUid(),
+        uid ->
+            trackedEntityType.getTrackedEntityTypeAttributes().stream()
+                .filter(a -> Boolean.TRUE.equals(a.isMandatory()))
+                .map(TrackedEntityTypeAttribute::getTrackedEntityAttribute)
+                .map(idSchemes::toMetadataIdentifier)
+                .collect(Collectors.toUnmodifiableSet()));
   }
 
   @Override

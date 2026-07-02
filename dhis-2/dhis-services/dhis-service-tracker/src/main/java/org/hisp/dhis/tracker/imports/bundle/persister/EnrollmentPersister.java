@@ -35,11 +35,10 @@ import java.util.Objects;
 import java.util.Set;
 import javax.persistence.EntityManager;
 import org.hisp.dhis.common.UID;
+import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.note.Note;
 import org.hisp.dhis.program.Enrollment;
-import org.hisp.dhis.reservedvalue.ReservedValueService;
 import org.hisp.dhis.trackedentity.TrackedEntityProgramOwnerService;
-import org.hisp.dhis.trackedentityattributevalue.TrackedEntityAttributeValueChangeLogService;
 import org.hisp.dhis.tracker.TrackerType;
 import org.hisp.dhis.tracker.imports.bundle.TrackerBundle;
 import org.hisp.dhis.tracker.imports.converter.TrackerConverterService;
@@ -47,6 +46,8 @@ import org.hisp.dhis.tracker.imports.domain.EnrollmentStatus;
 import org.hisp.dhis.tracker.imports.job.SideEffectTrigger;
 import org.hisp.dhis.tracker.imports.job.TrackerSideEffectDataBundle;
 import org.hisp.dhis.tracker.imports.preheat.TrackerPreheat;
+import org.jasypt.encryption.pbe.PBEStringEncryptor;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 /**
@@ -61,12 +62,12 @@ public class EnrollmentPersister
   private final TrackedEntityProgramOwnerService trackedEntityProgramOwnerService;
 
   public EnrollmentPersister(
-      ReservedValueService reservedValueService,
+      DhisConfigurationProvider config,
+      @Qualifier("aes128StringEncryptor") PBEStringEncryptor encryptor,
       TrackerConverterService<org.hisp.dhis.tracker.imports.domain.Enrollment, Enrollment>
           enrollmentConverter,
-      TrackedEntityProgramOwnerService trackedEntityProgramOwnerService,
-      TrackedEntityAttributeValueChangeLogService trackedEntityAttributeValueChangeLogService) {
-    super(reservedValueService, trackedEntityAttributeValueChangeLogService);
+      TrackedEntityProgramOwnerService trackedEntityProgramOwnerService) {
+    super(config, encryptor);
 
     this.enrollmentConverter = enrollmentConverter;
     this.trackedEntityProgramOwnerService = trackedEntityProgramOwnerService;
@@ -77,12 +78,14 @@ public class EnrollmentPersister
       EntityManager entityManager,
       TrackerPreheat preheat,
       org.hisp.dhis.tracker.imports.domain.Enrollment enrollment,
-      Enrollment enrollmentToPersist) {
+      Enrollment enrollmentToPersist,
+      ChangeLogAccumulator changeLogs) {
     handleTrackedEntityAttributeValues(
         entityManager,
         preheat,
         enrollment.getAttributes(),
-        preheat.getTrackedEntity(enrollmentToPersist.getTrackedEntity().getUid()));
+        preheat.getTrackedEntity(enrollmentToPersist.getTrackedEntity().getUid()),
+        changeLogs);
   }
 
   @Override
@@ -90,7 +93,8 @@ public class EnrollmentPersister
       EntityManager entityManager,
       TrackerPreheat preheat,
       org.hisp.dhis.tracker.imports.domain.Enrollment enrollment,
-      Enrollment enrollmentToPersist) {
+      Enrollment enrollmentToPersist,
+      ChangeLogAccumulator changeLogs) {
     // DO NOTHING - TE HAVE NO DATA VALUES
   }
 
@@ -123,6 +127,11 @@ public class EnrollmentPersister
   @Override
   protected TrackerSideEffectDataBundle handleSideEffects(
       TrackerBundle bundle, Enrollment enrollment, List<SideEffectTrigger> triggers) {
+    boolean hasTemplates = hasMatchingNotificationTemplates(enrollment.getProgram(), triggers);
+    boolean hasRuleEffects = !bundle.getEnrollmentRuleEffects().isEmpty();
+    if (!hasTemplates && !hasRuleEffects) {
+      return null;
+    }
 
     return TrackerSideEffectDataBundle.builder()
         .klass(Enrollment.class)
@@ -133,7 +142,7 @@ public class EnrollmentPersister
         .accessedBy(bundle.getUsername())
         .enrollment(enrollment)
         .program(enrollment.getProgram())
-        .triggers(triggers)
+        .triggers(hasTemplates ? triggers : List.of())
         .build();
   }
 

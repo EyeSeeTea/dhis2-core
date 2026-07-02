@@ -28,16 +28,29 @@
 package org.hisp.dhis.metadata.export;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
 import org.hisp.dhis.common.IdentifiableObject;
+import org.hisp.dhis.common.IdentifiableObjectManager;
+import org.hisp.dhis.dxf2.metadata.MetadataExportParams;
 import org.hisp.dhis.dxf2.metadata.MetadataExportService;
+import org.hisp.dhis.mapping.MapView;
 import org.hisp.dhis.program.Program;
 import org.hisp.dhis.program.ProgramSection;
+import org.hisp.dhis.render.RenderFormat;
+import org.hisp.dhis.render.RenderService;
 import org.hisp.dhis.test.integration.SingleSetupIntegrationTestBase;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -45,6 +58,12 @@ class MetadataExportWithDependenciesTest extends SingleSetupIntegrationTestBase 
 
   @PersistenceContext private EntityManager entityManager;
   @Autowired private MetadataExportService metadataExportService;
+
+  @Autowired private IdentifiableObjectManager manager;
+
+  @Autowired private RenderService renderService;
+
+  @Autowired private ObjectMapper jsonMapper;
 
   @Test
   void testExportProgramWithProgramSection() {
@@ -58,5 +77,29 @@ class MetadataExportWithDependenciesTest extends SingleSetupIntegrationTestBase 
 
     assertEquals(1, export.get(Program.class).size());
     assertEquals(1, export.get(ProgramSection.class).size());
+  }
+
+  @Test
+  @DisplayName("MapView should not be exported at root level when exporting Map with dependencies")
+  void exportMetadataShouldNotContainMapView() throws IOException {
+    MapView mapView = createMapView("A");
+    org.hisp.dhis.mapping.Map map = new org.hisp.dhis.mapping.Map();
+    map.setName("MapA");
+    map.setMapViews(List.of(mapView));
+    map.setAutoFields();
+    manager.save(map);
+
+    MetadataExportParams exportParams = new MetadataExportParams();
+    exportParams.addClass(org.hisp.dhis.mapping.Map.class);
+    exportParams.addClass(MapView.class);
+    ObjectNode exported = metadataExportService.getMetadataAsObjectNode(exportParams);
+
+    Map<Class<? extends IdentifiableObject>, List<IdentifiableObject>> metadata =
+        renderService.fromMetadata(
+            new ByteArrayInputStream(jsonMapper.writeValueAsBytes(exported)), RenderFormat.JSON);
+    assertNull(metadata.get(org.hisp.dhis.mapping.MapView.class));
+    org.hisp.dhis.mapping.Map exportMap =
+        (org.hisp.dhis.mapping.Map) metadata.get(org.hisp.dhis.mapping.Map.class).get(0);
+    assertNotNull(exportMap.getMapViews());
   }
 }
