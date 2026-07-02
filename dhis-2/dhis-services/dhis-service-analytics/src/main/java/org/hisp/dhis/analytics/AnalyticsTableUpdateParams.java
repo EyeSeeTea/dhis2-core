@@ -84,12 +84,6 @@ public class AnalyticsTableUpdateParams {
   /** Current date, only used for testing */
   private Date today;
 
-  /**
-   * HACK: startDate for checking if there were recent changes. If set, getLatestAnalyticsTable uses
-   * this value instead of the lastSuccessfulUpdate to determine if it hasUpdatedData
-   */
-  private Date forcedStartDate;
-
   private final Map<String, Object> extraParameters = new HashMap<>();
 
   public void addExtraParam(String prefix, String key, Object value) {
@@ -181,8 +175,8 @@ public class AnalyticsTableUpdateParams {
     params.jobId = this.jobId;
     params.startTime = this.startTime;
     params.lastSuccessfulUpdate = this.lastSuccessfulUpdate;
-    params.forcedStartDate = this.forcedStartDate;
-    return params;
+
+    return this;
   }
 
   public static Builder newBuilder() {
@@ -243,11 +237,6 @@ public class AnalyticsTableUpdateParams {
 
     public Builder withLastSuccessfulUpdate(Date lastSuccessfulUpdate) {
       this.params.lastSuccessfulUpdate = lastSuccessfulUpdate;
-      return this;
-    }
-
-    public Builder withForcedStartDate(Date forcedStartDate) {
-      this.params.forcedStartDate = forcedStartDate;
       return this;
     }
 

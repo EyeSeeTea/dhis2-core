@@ -33,7 +33,6 @@ import static org.hisp.dhis.scheduling.JobProgress.FailurePolicy.SKIP_STAGE;
 import static org.hisp.dhis.util.DateUtils.toLongDate;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
@@ -171,22 +170,6 @@ public class DefaultAnalyticsTableService implements AnalyticsTableService {
       progress.startingStage("Removing updated and deleted data " + tableType, SKIP_STAGE);
       progress.runStage(() -> tableManager.removeUpdatedData(tables));
       clock.logTime("Removed updated and deleted data");
-    } else { // is full update
-      // Delete contents from the latest partition since the last full execution.
-      // This prevents duplication of values already computed in other partitions as part of the
-      // current full update
-      progress.startingStage(
-          "Removing updated and deleted data [full-fix] " + tableType, SKIP_STAGE);
-      AnalyticsTableUpdateParams paramsLatestPartition =
-          AnalyticsTableUpdateParams.newBuilder(params)
-              .withLatestPartition()
-              .withForcedStartDate(
-                  systemSettingManager.getSystemSetting(
-                      SettingKey.LAST_SUCCESSFUL_ANALYTICS_TABLES_UPDATE, Date.class))
-              .build();
-      List<AnalyticsTable> latestPartition = tableManager.getAnalyticsTables(paramsLatestPartition);
-      progress.runStage(() -> tableManager.removeUpdatedData(latestPartition));
-      clock.logTime("Removed updated and deleted data [full-fix]");
     }
 
     swapTables(params, tables, progress);
