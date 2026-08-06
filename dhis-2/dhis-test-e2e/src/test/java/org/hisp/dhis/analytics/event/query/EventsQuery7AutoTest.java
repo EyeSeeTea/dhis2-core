@@ -339,7 +339,7 @@ public class EventsQuery7AutoTest extends AnalyticsApiTest {
             .add("page=1")
             .add(
                 "dimension=ou:ImspTQPwCqd,CREATED:2017,LAST_UPDATED:2018,A03MvHHogjR.EVENT_DATE:2021")
-            .add("desc=eventdate,lastupdated,ouname");
+            .add("desc=lastupdated");
 
     // When
     ApiResponse response = actions.query().get("IpHINAT79UW", JSON, JSON, params);
@@ -391,20 +391,20 @@ public class EventsQuery7AutoTest extends AnalyticsApiTest {
 
     // 7. Assert row values by name at specific indices (sorted results).
     // Validate selected values for row index 0
-    validateRowValueByName(response, actualHeaders, 0, "ouname", "Mambiama CHP");
-    validateRowValueByName(response, actualHeaders, 0, "lastupdated", "2018-08-06 21:20:52.67");
+    validateRowValueByName(response, actualHeaders, 0, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 0, "lastupdated", "2018-09-14 22:24:18.195");
+
+    // Validate selected values for row index 1
+    validateRowValueByName(response, actualHeaders, 1, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 1, "lastupdated", "2018-09-14 21:52:47.515");
+
+    // Validate selected values for row index 2
+    validateRowValueByName(response, actualHeaders, 2, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 2, "lastupdated", "2018-09-14 21:50:14.769");
 
     // Validate selected values for row index 3
-    validateRowValueByName(response, actualHeaders, 3, "ouname", "Mongerewa MCHP");
-    validateRowValueByName(response, actualHeaders, 3, "lastupdated", "2018-08-06 21:20:50.052");
-
-    // Validate selected values for row index 6
-    validateRowValueByName(response, actualHeaders, 6, "ouname", "Youndu CHP");
-    validateRowValueByName(response, actualHeaders, 6, "lastupdated", "2018-08-06 21:20:48.359");
-
-    // Validate selected values for row index 9
-    validateRowValueByName(response, actualHeaders, 9, "ouname", "Rokel (Masimera) MCHP");
-    validateRowValueByName(response, actualHeaders, 9, "lastupdated", "2018-08-06 21:20:48.017");
+    validateRowValueByName(response, actualHeaders, 3, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 3, "lastupdated", "2018-08-07 14:56:08.107");
   }
 
   @Test
@@ -423,7 +423,7 @@ public class EventsQuery7AutoTest extends AnalyticsApiTest {
             .add("pageSize=10")
             .add("page=1")
             .add("dimension=ou:ImspTQPwCqd,CREATED:2017,A03MvHHogjR.EVENT_DATE:2021")
-            .add("desc=eventdate,lastupdated,ouname");
+            .add("desc=lastupdated");
 
     // When
     ApiResponse response = actions.query().get("IpHINAT79UW", JSON, JSON, params);
@@ -475,20 +475,20 @@ public class EventsQuery7AutoTest extends AnalyticsApiTest {
 
     // 7. Assert row values by name at specific indices (sorted results).
     // Validate selected values for row index 0
-    validateRowValueByName(response, actualHeaders, 0, "ouname", "Mambiama CHP");
-    validateRowValueByName(response, actualHeaders, 0, "lastupdated", "2018-08-06 21:20:52.67");
+    validateRowValueByName(response, actualHeaders, 0, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 0, "lastupdated", "2018-09-14 22:24:18.195");
+
+    // Validate selected values for row index 1
+    validateRowValueByName(response, actualHeaders, 1, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 1, "lastupdated", "2018-09-14 21:52:47.515");
+
+    // Validate selected values for row index 2
+    validateRowValueByName(response, actualHeaders, 2, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 2, "lastupdated", "2018-09-14 21:50:14.769");
 
     // Validate selected values for row index 3
-    validateRowValueByName(response, actualHeaders, 3, "ouname", "Mongerewa MCHP");
-    validateRowValueByName(response, actualHeaders, 3, "lastupdated", "2018-08-06 21:20:50.052");
-
-    // Validate selected values for row index 6
-    validateRowValueByName(response, actualHeaders, 6, "ouname", "Youndu CHP");
-    validateRowValueByName(response, actualHeaders, 6, "lastupdated", "2018-08-06 21:20:48.359");
-
-    // Validate selected values for row index 9
-    validateRowValueByName(response, actualHeaders, 9, "ouname", "Rokel (Masimera) MCHP");
-    validateRowValueByName(response, actualHeaders, 9, "lastupdated", "2018-08-06 21:20:48.017");
+    validateRowValueByName(response, actualHeaders, 3, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 3, "lastupdated", "2018-08-07 14:56:08.107");
   }
 
   @Test
@@ -508,7 +508,7 @@ public class EventsQuery7AutoTest extends AnalyticsApiTest {
             .add("pageSize=10")
             .add("page=1")
             .add("dimension=ou:ImspTQPwCqd,LAST_UPDATED:2018,A03MvHHogjR.EVENT_DATE:2021")
-            .add("desc=eventdate,lastupdated,ouname");
+            .add("desc=lastupdated");
 
     // When
     ApiResponse response = actions.query().get("IpHINAT79UW", JSON, JSON, params);
@@ -560,20 +560,20 @@ public class EventsQuery7AutoTest extends AnalyticsApiTest {
 
     // 7. Assert row values by name at specific indices (sorted results).
     // Validate selected values for row index 0
-    validateRowValueByName(response, actualHeaders, 0, "ouname", "Mambiama CHP");
-    validateRowValueByName(response, actualHeaders, 0, "lastupdated", "2018-08-06 21:20:52.67");
+    validateRowValueByName(response, actualHeaders, 0, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 0, "lastupdated", "2018-09-14 22:24:18.195");
+
+    // Validate selected values for row index 1
+    validateRowValueByName(response, actualHeaders, 1, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 1, "lastupdated", "2018-09-14 21:52:47.515");
+
+    // Validate selected values for row index 2
+    validateRowValueByName(response, actualHeaders, 2, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 2, "lastupdated", "2018-09-14 21:50:14.769");
 
     // Validate selected values for row index 3
-    validateRowValueByName(response, actualHeaders, 3, "ouname", "Mongerewa MCHP");
-    validateRowValueByName(response, actualHeaders, 3, "lastupdated", "2018-08-06 21:20:50.052");
-
-    // Validate selected values for row index 6
-    validateRowValueByName(response, actualHeaders, 6, "ouname", "Youndu CHP");
-    validateRowValueByName(response, actualHeaders, 6, "lastupdated", "2018-08-06 21:20:48.359");
-
-    // Validate selected values for row index 9
-    validateRowValueByName(response, actualHeaders, 9, "ouname", "Rokel (Masimera) MCHP");
-    validateRowValueByName(response, actualHeaders, 9, "lastupdated", "2018-08-06 21:20:48.017");
+    validateRowValueByName(response, actualHeaders, 3, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 3, "lastupdated", "2018-08-07 14:56:08.107");
   }
 
   @Test
@@ -688,5 +688,91 @@ public class EventsQuery7AutoTest extends AnalyticsApiTest {
             equalTo(
                 "Period dimension cannot be used with stage-specific date dimensions (ie: EVENT_DATE, SCHEDULED_DATE)"))
         .body("errorCode", equalTo("E7242"));
+  }
+
+  @Test
+  public void ouMultipleLevels() throws JSONException {
+    // Read the 'expect.postgis' system property at runtime to adapt assertions.
+    boolean expectPostgis = isPostgres();
+
+    // Given
+    QueryParamsBuilder params =
+        new QueryParamsBuilder()
+            .add("includeMetadataDetails=true")
+            .add("headers=ouname,lastupdated,GxdhnY5wmHq,p2Zxg0wcPQ3")
+            .add("lastUpdated=201707")
+            .add("stage=ZzYYXq4fJie")
+            .add("displayProperty=NAME")
+            .add("totalPages=false")
+            .add("pageSize=100")
+            .add("outputType=EVENT")
+            .add("page=1")
+            .add(
+                "dimension=GxdhnY5wmHq,ou:USER_ORGUNIT;LEVEL-wjP19dkFeIk;LEVEL-tTUf91fCytl;LEVEL-m9lBJogzE95,p2Zxg0wcPQ3");
+
+    // When
+    ApiResponse response = actions.query().get("IpHINAT79UW", JSON, JSON, params);
+
+    // Then
+    // 1. Validate Response Structure (Counts, Headers, Height/Width)
+    //    This helper checks basic counts and dimensions, adapting based on the runtime
+    // 'expectPostgis' flag.
+    validateResponseStructure(
+        response,
+        expectPostgis,
+        1,
+        4,
+        4); // Pass runtime flag, row count, and expected header counts
+
+    // 2. Extract Headers into a List of Maps for easy access by name
+    List<Map<String, Object>> actualHeaders =
+        response.extractList("headers", Map.class).stream()
+            .map(obj -> (Map<String, Object>) obj) // Ensure correct type
+            .collect(Collectors.toList());
+
+    // 4. Validate Headers By Name (conditionally checking PostGIS headers).
+    validateHeaderPropertiesByName(
+        response,
+        actualHeaders,
+        "ouname",
+        "Organisation unit name",
+        "TEXT",
+        "java.lang.String",
+        false,
+        true);
+    validateHeaderPropertiesByName(
+        response,
+        actualHeaders,
+        "lastupdated",
+        "Last updated on",
+        "DATETIME",
+        "java.time.LocalDateTime",
+        false,
+        true);
+    validateHeaderPropertiesByName(
+        response,
+        actualHeaders,
+        "GxdhnY5wmHq",
+        "Average weight (g)",
+        "NUMBER",
+        "java.lang.Double",
+        false,
+        true);
+    validateHeaderPropertiesByName(
+        response,
+        actualHeaders,
+        "p2Zxg0wcPQ3",
+        "BCG doses",
+        "NUMBER",
+        "java.lang.Double",
+        false,
+        true);
+
+    // rowContext not found or empty in the response, skipping assertions.
+
+    // 7. Assert row values by name at specific indices (sorted results).
+    // Validate selected values for row index 0
+    validateRowValueByName(response, actualHeaders, 0, "ouname", "Ngelehun CHC");
+    validateRowValueByName(response, actualHeaders, 0, "p2Zxg0wcPQ3", "0");
   }
 }

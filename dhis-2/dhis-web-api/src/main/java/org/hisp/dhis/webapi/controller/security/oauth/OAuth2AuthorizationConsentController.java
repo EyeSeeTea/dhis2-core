@@ -40,9 +40,10 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 
 /**
- * Controller for managing OAuth2 authorization consents for the DHIS2 OAuth2 authorization server.
- * Superuser-only for 2.43.0; no new consents can be granted because the authorization server itself
- * is disabled.
+ * Read-only controller for inspecting OAuth2 authorization consents (principal to client scope
+ * grants stored by Spring Authorization Server). Gated on {@link
+ * org.hisp.dhis.security.Authorities#ALL}: only superusers may list or read these rows because they
+ * reveal which principals have granted which scopes to which clients.
  *
  * @author Morten Svanæs <msvanaes@dhis2.org>
  */

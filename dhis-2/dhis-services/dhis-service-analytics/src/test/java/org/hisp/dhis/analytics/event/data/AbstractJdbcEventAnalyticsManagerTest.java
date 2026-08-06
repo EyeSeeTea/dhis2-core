@@ -46,12 +46,10 @@ import static org.hisp.dhis.common.QueryOperator.NEQ;
 import static org.hisp.dhis.common.QueryOperator.NIEQ;
 import static org.hisp.dhis.common.QueryOperator.NILIKE;
 import static org.hisp.dhis.common.RequestTypeAware.EndpointAction.AGGREGATE;
-import static org.hisp.dhis.common.RequestTypeAware.EndpointAction.QUERY;
 import static org.hisp.dhis.common.RequestTypeAware.EndpointItem.ENROLLMENT;
 import static org.hisp.dhis.common.ValueType.BOOLEAN;
 import static org.hisp.dhis.common.ValueType.NUMBER;
 import static org.hisp.dhis.common.ValueType.TEXT;
-import static org.hisp.dhis.period.RelativePeriodEnum.THIS_YEAR;
 import static org.hisp.dhis.system.util.SqlUtils.quote;
 import static org.hisp.dhis.test.TestBase.createDataElement;
 import static org.hisp.dhis.test.TestBase.createOrganisationUnit;
@@ -125,9 +123,7 @@ import org.hisp.dhis.external.conf.ConfigurationKey;
 import org.hisp.dhis.external.conf.DefaultDhisConfigurationProvider;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.organisationunit.OrganisationUnitService;
-import org.hisp.dhis.period.PeriodDimension;
 import org.hisp.dhis.period.PeriodTypeEnum;
-import org.hisp.dhis.period.YearlyPeriodType;
 import org.hisp.dhis.program.AnalyticsType;
 import org.hisp.dhis.program.Program;
 import org.hisp.dhis.program.ProgramIndicator;
@@ -195,8 +191,6 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
 
   private JdbcEventAnalyticsManager eventSubject;
 
-  private JdbcEnrollmentAnalyticsManager enrollmentSubject;
-
   private Program programA;
 
   private DataElement dataElementA;
@@ -228,7 +222,8 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
         new DefaultStageQuerySqlFacade(
             new DefaultStageQueryItemClassifier(),
             new DefaultStageDatePeriodBucketSqlRenderer(sqlBuilder),
-            new DefaultStageOrgUnitSqlService(organisationUnitResolver, sqlBuilder));
+            new DefaultStageOrgUnitSqlService(organisationUnitResolver, sqlBuilder),
+            sqlBuilder);
 
     eventSubject =
         new JdbcEventAnalyticsManager(
@@ -246,25 +241,9 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
             columnMapper,
             filterBuilder,
             stageQuerySqlFacade,
-            new DateFieldPeriodBucketColumnResolver(new PostgreSqlAnalyticsSqlBuilder()));
-
-    enrollmentSubject =
-        new JdbcEnrollmentAnalyticsManager(
-            jdbcTemplate,
-            programIndicatorService,
-            programIndicatorSubqueryBuilder,
-            null,
-            piDisagQueryGenerator,
-            enrollmentTimeFieldSqlRenderer,
-            executionPlanStore,
-            systemSettingsService,
-            config,
-            sqlBuilder,
-            organisationUnitResolver,
-            columnMapper,
-            filterBuilder,
-            stageQuerySqlFacade,
-            new DateFieldPeriodBucketColumnResolver(new PostgreSqlAnalyticsSqlBuilder()));
+            new DateFieldPeriodBucketColumnResolver(new PostgreSqlAnalyticsSqlBuilder()),
+            new FirstOrLastValueSubqueryRenderer(
+                sqlBuilder, eventTimeFieldSqlRenderer, programIndicatorService));
   }
 
   @Test
@@ -722,7 +701,7 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
 
   @Test
   void
-      verifyGetColumnsWithAttributeOrgUnitTypeAndCoordinatesReturnsFetchesCoordinatesFromOrgUnite() {
+      verifyGetColumnsWithAttributeOrgUnitTypeAndCoordinatesReturnsFetchesCoordinatesFromOrgUnits() {
     DataElement deA = createDataElement('A', ValueType.ORGANISATION_UNIT, AggregationType.NONE);
     DimensionalObject periods =
         new BaseDimensionalObject(
@@ -753,8 +732,8 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
     assertThat(
         columns,
         containsInAnyOrder(
-            "ax.\"pe\"",
-            "ax.\"ou\"",
+            "ax.\"pe\" as pe",
+            "ax.\"ou\" as ou",
             "'[' || round(ST_X(ST_Centroid(\""
                 + deA.getUid()
                 + "_geom"
@@ -1145,24 +1124,6 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
   }
 
   @Test
-  void testGetSelectClauseForAggregatedEnrollments() {
-    // Given
-    PeriodDimension period = PeriodDimension.of(THIS_YEAR);
-    period.getPeriod().setPeriodType(new YearlyPeriodType());
-    EventQueryParams params =
-        new EventQueryParams.Builder()
-            .withProgram(createProgram('A'))
-            .withEndpointAction(AGGREGATE)
-            .withEndpointItem(ENROLLMENT)
-            .withPeriods(List.of(period), PeriodTypeEnum.YEARLY.getName())
-            .build();
-    // When
-    String select = enrollmentSubject.getSelectClause(params);
-    // Then
-    assertEquals("select enrollment,Yearly ", select);
-  }
-
-  @Test
   void testItemsInFilterAreQuotedForOrganisationUnit() {
     // Given
     QueryItem queryItem = mock(QueryItem.class);
@@ -1171,7 +1132,8 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
         new EventQueryParams.Builder().withStartDate(new Date()).withEndDate(new Date()).build();
     when(queryItem.getItemName()).thenReturn("anyItem");
     when(queryItem.getValueType()).thenReturn(ValueType.ORGANISATION_UNIT);
-    when(organisationUnitResolver.resolveOrgUnits(any(QueryFilter.class), anyList()))
+    when(organisationUnitResolver.resolveOrgUnits(
+            any(QueryFilter.class), anyList(), any(QueryItem.class)))
         .thenReturn("A;B;C");
 
     // When
@@ -1197,7 +1159,8 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
             .withEndpointAction(AGGREGATE)
             .withEndpointItem(ENROLLMENT)
             .build();
-    when(organisationUnitResolver.resolveOrgUnits(any(QueryFilter.class), anyList()))
+    when(organisationUnitResolver.resolveOrgUnits(
+            any(QueryFilter.class), anyList(), any(QueryItem.class)))
         .thenReturn("A;B;C");
 
     // When
@@ -1205,25 +1168,6 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
 
     // Then
     assertEquals("ax.\"12345678\" in ('A','B','C')", sql);
-  }
-
-  @Test
-  void testGetSelectClauseForQueryEnrollments() {
-    // Given
-    PeriodDimension period = PeriodDimension.of(THIS_YEAR);
-    EventQueryParams params =
-        new EventQueryParams.Builder()
-            .withProgram(createProgram('A'))
-            .withEndpointAction(QUERY)
-            .withEndpointItem(ENROLLMENT)
-            .withPeriods(List.of(period), PeriodTypeEnum.YEARLY.getName())
-            .build();
-    // When
-    String select = enrollmentSubject.getSelectClause(params);
-    // Then
-    assertEquals(
-        "select enrollment,trackedentity,enrollmentdate,occurreddate,storedby,createdbydisplayname,lastupdatedbydisplayname,lastupdated,created,completeddate,ST_AsGeoJSON(enrollmentgeometry),longitude,latitude,ouname,ounamehierarchy,oucode,enrollmentstatus,ax.\"yearly\" ",
-        select);
   }
 
   @Test
@@ -1292,7 +1236,8 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
             .withEndDate(new Date())
             .build();
 
-    when(organisationUnitResolver.resolveOrgUnits(any(QueryFilter.class), anyList()))
+    when(organisationUnitResolver.resolveOrgUnits(
+            any(QueryFilter.class), anyList(), any(QueryItem.class)))
         .thenReturn("ouA;ouB");
 
     String sql = eventSubject.toSql(queryItem, filter, params).trim();
@@ -1719,6 +1664,43 @@ class AbstractJdbcEventAnalyticsManagerTest extends EventAnalyticsTest {
     assertThat(sql, containsString("\"occurreddate\" >= '2021-03-01'"));
     assertThat(sql, containsString("\"occurreddate\" <= '2021-05-31'"));
     assertThat(sql, containsString("\"ps\" = 'Zj7UnCAulEk'"));
+  }
+
+  /**
+   * DHIS2-20929: PI filters such as {@code #{stage.de} == 0} must not be wrapped in {@code
+   * coalesce(..., 0)} — otherwise events where the DE is NULL (or where the row belongs to a
+   * different program stage) incorrectly match the equality to zero. The filter must therefore be
+   * compiled with NULL-allowing semantics.
+   */
+  @Test
+  void verifyProgramIndicatorFilterCompiledAllowingNulls() {
+    ProgramIndicator programIndicator =
+        createProgramIndicator('A', programA, "V{event_count}", "#{ProgrmStagA.DataElmentA} == 0");
+
+    EventQueryParams params =
+        new EventQueryParams.Builder(createRequestParams())
+            .withProgramIndicator(programIndicator)
+            .build();
+
+    lenient()
+        .when(
+            programIndicatorService.getAnalyticsSqlAllowingNulls(
+                eq(programIndicator.getFilter()),
+                eq(org.hisp.dhis.analytics.DataType.BOOLEAN),
+                eq(programIndicator),
+                any(Date.class),
+                any(Date.class)))
+        .thenReturn("ax.\"DataElmentA\" = 0");
+
+    eventSubject.getWhereClause(params);
+
+    verify(programIndicatorService)
+        .getAnalyticsSqlAllowingNulls(
+            eq(programIndicator.getFilter()),
+            eq(org.hisp.dhis.analytics.DataType.BOOLEAN),
+            eq(programIndicator),
+            any(Date.class),
+            any(Date.class));
   }
 
   private EventQueryParams getEventQueryParamsForCoordinateFieldsTest(

@@ -27,45 +27,41 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-package org.hisp.dhis.webapi.controller.security;
+package org.hisp.dhis.dxf2.metadata.objectbundle.hooks;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
-import org.hisp.dhis.http.HttpStatus;
-import org.hisp.dhis.test.webapi.H2ControllerIntegrationTestBase;
-import org.junit.jupiter.api.Test;
-import org.springframework.transaction.annotation.Transactional;
+import java.util.function.Consumer;
+import org.hisp.dhis.dxf2.metadata.objectbundle.ObjectBundle;
+import org.hisp.dhis.feedback.ErrorCode;
+import org.hisp.dhis.feedback.ErrorReport;
+import org.hisp.dhis.security.oauth2.consent.Dhis2OAuth2AuthorizationConsent;
+import org.springframework.stereotype.Component;
 
 /**
- * Confirms the OAuth2 Authorization Server surface is disabled on 2.43.0. The DCR enrollment
- * endpoint is unreachable (404) because it is gated by {@code AuthorizationServerEnabledCondition}.
- * The three CRUD/list controllers are superuser-only — non-admins get 403.
+ * Reject any attempt to create or update {@link Dhis2OAuth2AuthorizationConsent} via the metadata
+ * import pipeline. Consents record which scopes a principal granted to a registered client and are
+ * written exclusively by Spring Authorization Server through {@code
+ * Dhis2OAuth2AuthorizationConsentServiceImpl.save(OAuth2AuthorizationConsent)}. Allowing {@code
+ * /api/metadata} to POST arbitrary consent rows would let an admin fabricate scope grants on behalf
+ * of any principal, bypassing the user-facing consent screen.
+ *
+ * <p>The read-only {@code OAuth2AuthorizationConsentController} still exposes GET, and Spring AS
+ * keeps its own persistence path. This hook only closes the metadata-import write path.
  *
  * @author Morten Svanæs <msvanaes@dhis2.org>
  */
-@Transactional
-class OAuth2AuthorizationServerDisabledTest extends H2ControllerIntegrationTestBase {
+@Component
+public class Dhis2OAuth2AuthorizationConsentObjectBundleHook
+    extends AbstractObjectBundleHook<Dhis2OAuth2AuthorizationConsent> {
 
-  @Test
-  void dcrEnrollDevice_returns404() {
-    assertEquals(HttpStatus.NOT_FOUND, GET("/enrollDevice?client_id=x").status());
-  }
-
-  @Test
-  void oauth2Clients_nonAdmin_returns403() {
-    switchToNewUser("guest-clients");
-    assertEquals(HttpStatus.FORBIDDEN, GET("/oAuth2Clients").status());
-  }
-
-  @Test
-  void oauth2Authorizations_nonAdmin_returns403() {
-    switchToNewUser("guest-auth");
-    assertEquals(HttpStatus.FORBIDDEN, GET("/oAuth2Authorizations").status());
-  }
-
-  @Test
-  void oauth2AuthorizationConsents_nonAdmin_returns403() {
-    switchToNewUser("guest-consent");
-    assertEquals(HttpStatus.FORBIDDEN, GET("/oAuth2AuthorizationConsents").status());
+  @Override
+  public void validate(
+      Dhis2OAuth2AuthorizationConsent object,
+      ObjectBundle bundle,
+      Consumer<ErrorReport> addReports) {
+    addReports.accept(
+        new ErrorReport(
+            Dhis2OAuth2AuthorizationConsent.class,
+            ErrorCode.E6023,
+            Dhis2OAuth2AuthorizationConsent.class.getSimpleName()));
   }
 }
