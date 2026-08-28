@@ -129,14 +129,16 @@ public class DefaultDataSetReportService implements DataSetReportService {
       List<Period> periods,
       OrganisationUnit orgUnit,
       Set<String> filters,
-      boolean selectedUnitOnly) {
+      boolean selectedUnitOnly,
+      boolean ignoreCustomForm) {
     List<Grid> grids;
 
     FormType formType = dataSet.getFormType();
 
-    if (formType.isCustom()) {
+    if (formType.isCustom() && !ignoreCustomForm) {
       grids = getCustomDataSetReportAsGrid(dataSet, periods, orgUnit, filters, selectedUnitOnly);
-    } else if (formType.isSection()) {
+    } else if (formType.isSection()
+        || (formType.isCustom() && ignoreCustomForm && !dataSet.getSections().isEmpty())) {
       grids = getSectionDataSetReport(dataSet, periods, orgUnit, filters, selectedUnitOnly);
     } else {
       grids = getDefaultDataSetReport(dataSet, periods, orgUnit, filters, selectedUnitOnly);

@@ -66,6 +66,8 @@ public interface DataSetReportService {
    * @param orgUnit the organisation unit.
    * @param dimensions mapping between dimension identifiers and dimension option identifiers.
    * @param selectedUnitOnly indicates whether to use captured or aggregated data.
+   * @param ignoreCustomForm indicates whether to render a custom-form data set from its section or
+   *     default layout.
    * @return a list of Grids.
    */
   List<Grid> getDataSetReportAsGrid(
@@ -73,5 +75,6 @@ public interface DataSetReportService {
       List<Period> periods,
       OrganisationUnit orgUnit,
       Set<String> dimensions,
-      boolean selectedUnitOnly);
+      boolean selectedUnitOnly,
+      boolean ignoreCustomForm);
 }

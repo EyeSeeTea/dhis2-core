@@ -117,7 +117,8 @@ public class DataSetReportController {
       @RequestParam String ds,
       @RequestParam List<String> pe,
       @RequestParam(required = false) Set<String> filter,
-      @RequestParam(required = false) boolean selectedUnitOnly)
+      @RequestParam(required = false) boolean selectedUnitOnly,
+      @RequestParam(required = false) boolean ignoreCustomForm)
       throws Exception {
     OrganisationUnit orgUnit = getAndValidateOrgUnit(ou);
     DataSet dataSet = getAndValidateDataSet(ds);
@@ -126,7 +127,7 @@ public class DataSetReportController {
     contextUtils.configureResponse(
         response, ContextUtils.CONTENT_TYPE_JSON, CacheStrategy.RESPECT_SYSTEM_SETTING);
     return dataSetReportService.getDataSetReportAsGrid(
-        dataSet, periods, orgUnit, filter, selectedUnitOnly);
+        dataSet, periods, orgUnit, filter, selectedUnitOnly, ignoreCustomForm);
   }
 
   @GetMapping(RESOURCE_PATH + ".xls")
@@ -136,7 +137,8 @@ public class DataSetReportController {
       @RequestParam String ds,
       @RequestParam List<String> pe,
       @RequestParam(required = false) Set<String> filter,
-      @RequestParam(required = false) boolean selectedUnitOnly)
+      @RequestParam(required = false) boolean selectedUnitOnly,
+      @RequestParam(required = false) boolean ignoreCustomForm)
       throws Exception {
     OrganisationUnit orgUnit = getAndValidateOrgUnit(ou);
     DataSet dataSet = getAndValidateDataSet(ds);
@@ -146,7 +148,7 @@ public class DataSetReportController {
         response, ContextUtils.CONTENT_TYPE_EXCEL, CacheStrategy.RESPECT_SYSTEM_SETTING);
     List<Grid> grids =
         dataSetReportService.getDataSetReportAsGrid(
-            dataSet, periods, orgUnit, filter, selectedUnitOnly);
+            dataSet, periods, orgUnit, filter, selectedUnitOnly, ignoreCustomForm);
     GridUtils.toXls(grids, response.getOutputStream());
   }
 
@@ -157,7 +159,8 @@ public class DataSetReportController {
       @RequestParam List<String> pe,
       @RequestParam String ou,
       @RequestParam(required = false) Set<String> filter,
-      @RequestParam(required = false) boolean selectedUnitOnly)
+      @RequestParam(required = false) boolean selectedUnitOnly,
+      @RequestParam(required = false) boolean ignoreCustomForm)
       throws Exception {
     OrganisationUnit orgUnit = getAndValidateOrgUnit(ou);
     DataSet dataSet = getAndValidateDataSet(ds);
@@ -167,7 +170,7 @@ public class DataSetReportController {
         response, ContextUtils.CONTENT_TYPE_PDF, CacheStrategy.RESPECT_SYSTEM_SETTING);
     List<Grid> grids =
         dataSetReportService.getDataSetReportAsGrid(
-            dataSet, periods, orgUnit, filter, selectedUnitOnly);
+            dataSet, periods, orgUnit, filter, selectedUnitOnly, ignoreCustomForm);
     GridUtils.toPdf(
         UserSettings.getCurrentSettings().getUserDbLocale(), grids, response.getOutputStream());
   }
