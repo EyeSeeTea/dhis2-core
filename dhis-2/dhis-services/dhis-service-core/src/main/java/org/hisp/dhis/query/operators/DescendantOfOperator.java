@@ -52,7 +52,7 @@ public final class DescendantOfOperator extends Operator<String> implements JpaP
 
   @Override
   public <Y> Predicate getPredicate(CriteriaBuilder builder, Root<Y> root, PropertyPath path) {
-    return getPredicate(builder, getPropertyPath(root, path));
+    return getPredicate(builder, root.get(path.getPath()));
   }
 
   @Override
