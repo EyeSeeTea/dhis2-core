@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2022, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -58,6 +58,7 @@ import javax.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.hibernate.Hibernate;
 import org.hisp.dhis.attribute.AttributeValue;
 import org.hisp.dhis.common.CodeGenerator;
 import org.hisp.dhis.common.DhisApiVersion;
@@ -98,11 +99,6 @@ import org.hisp.dhis.query.Query;
 import org.hisp.dhis.query.QueryParserException;
 import org.hisp.dhis.schema.MetadataMergeParams;
 import org.hisp.dhis.schema.descriptors.UserSchemaDescriptor;
-// [SMS2FA]
-// import org.hisp.dhis.security.RequiresAuthority;
-import org.hisp.dhis.security.twofa.TwoFactorAuthService;
-// [SMS2FA]
-// import org.hisp.dhis.setting.UserSettings;
 import org.hisp.dhis.system.util.ValidationUtils;
 import org.hisp.dhis.user.CredentialsInfo;
 import org.hisp.dhis.user.CurrentUser;
@@ -157,8 +153,6 @@ public class UserController extends AbstractCrudController<User> {
   @Autowired private OrganisationUnitService organisationUnitService;
 
   @Autowired private PasswordValidationService passwordValidationService;
-
-  @Autowired private TwoFactorAuthService twoFactorAuthService;
 
   // -------------------------------------------------------------------------
   // GET
@@ -455,6 +449,19 @@ public class UserController extends AbstractCrudController<User> {
       return conflict("User not found: " + uid);
     }
 
+    // MetadataMergeService.merge() silently skips any collection that is still an
+    // uninitialized Hibernate proxy at merge time (to avoid triggering large lazy loads
+    // elsewhere), so force-initialize every collection it needs to copy here, or they get
+    // dropped from the replica with no error. "groups" is not in this list because it is
+    // re-established explicitly via userGroupService.addUserToGroups() below, independent of
+    // whatever merge() does with it.
+    Hibernate.initialize(existingUser.getOrganisationUnits());
+    Hibernate.initialize(existingUser.getDataViewOrganisationUnits());
+    Hibernate.initialize(existingUser.getTeiSearchOrganisationUnits());
+    Hibernate.initialize(existingUser.getUserRoles());
+    Hibernate.initialize(existingUser.getCogsDimensionConstraints());
+    Hibernate.initialize(existingUser.getCatDimensionConstraints());
+
     User currentUser = userService.getUserByUsername(CurrentUserUtil.getCurrentUsername());
     validateCreateUser(existingUser, currentUser);
 
@@ -554,18 +561,19 @@ public class UserController extends AbstractCrudController<User> {
   }
 
   /**
-   * Disable 2FA for the user with the given uid.
+   * "Disable two-factor authentication for the user with the given uid."
    *
-   * @param uid The uid of the user to disable 2FA for.
-   * @param currentUser This is the user currently logged in.
+   * <p>
+   *
+   * @param uid The uid of the user to disable two-factor authentication for.
+   * @param currentUser This is the user that is currently logged in.
    * @return A WebMessage object.
    */
   @PostMapping("/{uid}/twoFA/disabled")
   @ResponseBody
-  public WebMessage disableTwoFa(@PathVariable("uid") String uid, @CurrentUser User currentUser)
-      throws ForbiddenException, NotFoundException {
+  public WebMessage disableTwoFa(@PathVariable("uid") String uid, @CurrentUser User currentUser) {
     List<ErrorReport> errors = new ArrayList<>();
-    twoFactorAuthService.privileged2FADisable(currentUser, uid, errors::add);
+    userService.privilegedTwoFactorDisable(currentUser, uid, errors::add);
 
     if (errors.isEmpty()) {
       return WebMessageUtils.ok();
@@ -916,8 +924,8 @@ public class UserController extends AbstractCrudController<User> {
     user.setAccountExpiry(accountExpiry);
     userService.updateUser(user);
 
-    if (!userToModify.isAccountNonExpired()) {
-      userService.invalidateUserSessions(userToModify.getUsername());
+    if (!user.isAccountNonExpired()) {
+      userService.invalidateUserSessions(user.getUsername());
     }
   }
 

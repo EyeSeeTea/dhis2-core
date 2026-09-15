@@ -651,8 +651,11 @@ class UserServiceTest extends SingleSetupIntegrationTestBase {
 
     User admin = createAndAddAdminUser("ALL");
     List<ErrorReport> errors = new ArrayList<>();
-    twoFactorAuthService.privileged2FADisable(getAdminUser(), userToModify.getUid(), errors::add);
+    userService.privilegedTwoFactorDisable(getAdminUser(), userToModify.getUid(), errors::add);
     assertTrue(errors.isEmpty());
+    User updatedUser = userService.getUser(userToModify.getUid());
+    assertNull(updatedUser.getSecret());
+    assertNull(updatedUser.getTwoFactorType());
   }
 
   @Test
@@ -677,8 +680,11 @@ class UserServiceTest extends SingleSetupIntegrationTestBase {
     userService.updateUser(currentUser);
 
     List<ErrorReport> errors = new ArrayList<>();
-    twoFactorAuthService.privileged2FADisable(currentUser, userToModify.getUid(), errors::add);
+    userService.privilegedTwoFactorDisable(currentUser, userToModify.getUid(), errors::add);
     assertTrue(errors.isEmpty());
+    User updatedUser = userService.getUser(userToModify.getUid());
+    assertNull(updatedUser.getSecret());
+    assertNull(updatedUser.getTwoFactorType());
   }
 
   @Test

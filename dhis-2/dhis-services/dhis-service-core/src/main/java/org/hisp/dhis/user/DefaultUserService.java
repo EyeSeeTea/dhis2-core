@@ -77,6 +77,7 @@ import org.hisp.dhis.email.EmailResponse;
 import org.hisp.dhis.feedback.ErrorCode;
 import org.hisp.dhis.feedback.ErrorReport;
 import org.hisp.dhis.feedback.NotFoundException;
+import org.hisp.dhis.hibernate.exception.UpdateAccessDeniedException;
 import org.hisp.dhis.i18n.I18n;
 import org.hisp.dhis.i18n.I18nManager;
 import org.hisp.dhis.i18n.locale.LocaleManager;
@@ -88,6 +89,7 @@ import org.hisp.dhis.period.Cal;
 import org.hisp.dhis.period.PeriodType;
 import org.hisp.dhis.security.PasswordManager;
 import org.hisp.dhis.security.acl.AclService;
+import org.hisp.dhis.security.twofa.TwoFactorAuthUtils;
 import org.hisp.dhis.setting.SettingKey;
 import org.hisp.dhis.setting.SystemSettingManager;
 import org.hisp.dhis.system.filter.UserRoleCanIssueFilter;
@@ -95,6 +97,7 @@ import org.hisp.dhis.system.util.ValidationUtils;
 import org.hisp.dhis.system.velocity.VelocityManager;
 import org.hisp.dhis.util.DateUtils;
 import org.hisp.dhis.util.ObjectUtils;
+import org.jboss.aerogear.security.otp.api.Base32;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.core.session.SessionInformation;
 import org.springframework.security.core.session.SessionRegistry;
@@ -106,7 +109,6 @@ import org.springframework.web.client.RestTemplate;
 
 /**
  * @author Chau Thu Tran
- * @author Morten Svanæs
  */
 @Slf4j
 @Lazy
@@ -795,6 +797,33 @@ public class DefaultUserService implements UserService {
     return userStore.getExpiringUserAccounts(inDays);
   }
 
+  @Transactional
+  @Override
+  public void resetTwoFactor(User user, UserDetails actingUser) {
+    user.setSecret(null);
+    updateUser(user, actingUser);
+  }
+
+  @Transactional
+  @Override
+  public void enableTwoFa(User user, String code) {
+    if (user.getSecret() == null) {
+      throw new IllegalStateException(
+          "User has not asked for a QR code yet, call the /qr endpoint first");
+    }
+
+    if (!UserService.hasTwoFactorSecretForApproval(user)) {
+      throw new IllegalStateException(
+          "QR already approved, you must call /disable and then call /qr before you can enable");
+    }
+
+    if (!TwoFactorAuthUtils.verifyTOTP2FACode(code, user.getSecret())) {
+      throw new IllegalStateException("Invalid code");
+    }
+
+    approveTwoFactorSecret(user, CurrentUserUtil.getCurrentUserDetails());
+  }
+
   @Override
   public void registerFailed2FADisableAttempt(String username) {
     Integer attempts = twoFaDisableFailedAttemptCache.get(username).orElse(0);
@@ -808,15 +837,19 @@ public class DefaultUserService implements UserService {
   }
 
   @Override
-  public boolean is2FADisableEndpointLocked(String username) {
+  public boolean twoFaDisableIsLocked(String username) {
     return twoFaDisableFailedAttemptCache.get(username).orElse(0) >= LOGIN_MAX_FAILED_ATTEMPTS;
+  }
+
+  @Override
+  public boolean is2FADisableEndpointLocked(String username) {
+    return twoFaDisableIsLocked(username);
   }
 
   @Override
   public void register2FACodeSentAttempt(String username) {
     Integer attempts = twoFaCodeSentAttemptCache.get(username).orElse(0);
-    attempts++;
-    twoFaCodeSentAttemptCache.put(username, attempts);
+    twoFaCodeSentAttemptCache.put(username, attempts + 1);
   }
 
   @Override
@@ -827,6 +860,47 @@ public class DefaultUserService implements UserService {
   @Override
   public void reset2FACodeSendAttempts(String username) {
     twoFaCodeSentAttemptCache.invalidate(username);
+  }
+
+  @Transactional
+  @Override
+  public void disableTwoFa(User user, String code) {
+    if (user.getSecret() == null) {
+      throw new IllegalStateException("Two factor is not enabled, enable first");
+    }
+
+    if (twoFaDisableIsLocked(user.getUsername())) {
+      throw new IllegalStateException("Too many failed attempts, try again later");
+    }
+
+    if (!TwoFactorAuthUtils.verifyTOTP2FACode(code, user.getSecret())) {
+      registerFailed2FADisableAttempt(user.getUsername());
+      throw new IllegalStateException("Invalid code");
+    }
+
+    resetTwoFactor(user, CurrentUserUtil.getCurrentUserDetails());
+    registerSuccess2FADisable(user.getUsername());
+  }
+
+  @Override
+  @Transactional
+  public void privilegedTwoFactorDisable(
+      User currentUser, String userUid, Consumer<ErrorReport> errors) {
+    User user = getUser(userUid);
+    if (user == null) {
+      throw new IllegalArgumentException("User not found");
+    }
+
+    if (currentUser.getUid().equals(user.getUid())
+        || !canCurrentUserCanModify(currentUser, user, errors)) {
+      throw new UpdateAccessDeniedException(ErrorCode.E3021.getMessage());
+    }
+
+    user.setSecret(null);
+    user.setTwoFactorType(null);
+    updateUser(user, UserDetails.fromUser(currentUser));
+    registerSuccess2FADisable(user.getUsername());
+    reset2FACodeSendAttempts(user.getUsername());
   }
 
   @Override
@@ -955,6 +1029,69 @@ public class DefaultUserService implements UserService {
   }
 
   @Override
+  @Transactional
+  public void generateTwoFactorOtpSecretForApproval(User user) {
+    String newSecret = TWO_FACTOR_CODE_APPROVAL_PREFIX + Base32.random();
+    user.setSecret(newSecret);
+    updateUser(user);
+  }
+
+  @Override
+  @Transactional
+  public void approveTwoFactorSecret(User user, UserDetails actingUser) {
+    if (user.getSecret() != null && UserService.hasTwoFactorSecretForApproval(user)) {
+      user.setSecret(user.getSecret().replace(TWO_FACTOR_CODE_APPROVAL_PREFIX, ""));
+      updateUser(user, actingUser);
+    }
+  }
+
+  @Override
+  public boolean hasTwoFactorRoleRestriction(UserDetails userDetails) {
+    return userDetails.hasAnyRestrictions(Set.of(TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME));
+  }
+
+  @Override
+  @Transactional
+  public void validateTwoFactorUpdate(boolean before, boolean after, User userToModify) {
+    if (before == after) {
+      return;
+    }
+
+    if (!before) {
+      throw new UpdateAccessDeniedException(
+          "You can not enable 2FA with this API endpoint, only disable.");
+    }
+
+    UserDetails currentUserDetails = CurrentUserUtil.getCurrentUserDetails();
+
+    if (currentUserDetails == null) {
+      throw new UpdateAccessDeniedException("No current user in session, can not update user.");
+    }
+
+    // Current user can not update their own 2FA settings, must use
+    // /2fa/enable or disable API, even if they are admin.
+    if (currentUserDetails.getUid().equals(userToModify.getUid())) {
+      throw new UpdateAccessDeniedException(ErrorCode.E3030.getMessage());
+    }
+
+    // If current user has access to manage this user, they can disable 2FA.
+    if (!aclService.canUpdate(currentUserDetails, userToModify)) {
+      throw new UpdateAccessDeniedException(
+          String.format(
+              "User `%s` is not allowed to update object `%s`.",
+              currentUserDetails.getUsername(), userToModify));
+    }
+
+    User currentUser = userStore.getUserByUsername(currentUserDetails.getUsername());
+
+    if (!canAddOrUpdateUser(getUids(userToModify.getGroups()), currentUser)
+        || !currentUserDetails.canModifyUser(userToModify)) {
+      throw new UpdateAccessDeniedException(
+          "You don't have the proper permissions to update this user.");
+    }
+  }
+
+  @Override
   @Nonnull
   @Transactional(readOnly = true)
   public List<UserLookup> getLinkedUserAccounts(@Nonnull User actingUser) {
@@ -997,21 +1134,49 @@ public class DefaultUserService implements UserService {
 
   @Override
   public void invalidateAllSessions() {
-    for (Object allPrincipal : sessionRegistry.getAllPrincipals()) {
-      for (SessionInformation allSession : sessionRegistry.getAllSessions(allPrincipal, true)) {
-        sessionRegistry.removeSessionInformation(allSession.getSessionId());
+    for (Object principal : sessionRegistry.getAllPrincipals()) {
+      for (SessionInformation session : sessionRegistry.getAllSessions(principal, true)) {
+        sessionRegistry.removeSessionInformation(session.getSessionId());
       }
     }
   }
 
   @Override
   public void invalidateUserSessions(String username) {
-    User user = getUserByUsername(username);
-    UserDetails userDetails = createUserDetails(user);
-    if (userDetails != null) {
-      List<SessionInformation> allSessions = sessionRegistry.getAllSessions(userDetails, false);
-      allSessions.forEach(SessionInformation::expireNow);
+    if (username == null) {
+      return;
     }
+    List<SessionInformation> sessions =
+        sessionRegistry.getAllSessions(sessionLookupPrincipal(username), false);
+    sessions.forEach(SessionInformation::expireNow);
+  }
+
+  /**
+   * Creates a minimal principal used only to look up sessions in the {@link SessionRegistry}. The
+   * in-memory registry matches principals by {@link UserDetailsImpl} equality, which includes the
+   * username only, and the Redis-backed registry resolves principals by name (username). Building
+   * this instead of loading the full user avoids one user fetch plus full {@code UserDetails}
+   * hydration (groups, roles, org units) per invalidated user.
+   */
+  private static UserDetails sessionLookupPrincipal(String username) {
+    return UserDetailsImpl.builder()
+        .username(username)
+        .authorities(List.of())
+        .allAuthorities(Set.of())
+        .allRestrictions(Set.of())
+        .userSettings(Map.of())
+        .userGroupIds(Set.of())
+        .userOrgUnitIds(Set.of())
+        .userDataOrgUnitIds(Set.of())
+        .userSearchOrgUnitIds(Set.of())
+        .userRoleIds(Set.of())
+        .build();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<String> getUsernamesByUserRole(@Nonnull UID roleUid) {
+    return userStore.getUsernamesByUserRole(roleUid);
   }
 
   @Override
@@ -1445,8 +1610,7 @@ public class DefaultUserService implements UserService {
   @Transactional
   public String generateAndSetNewEmailVerificationToken(User user) {
     String token = CodeGenerator.getRandomSecureToken();
-    String encodedToken = token + "|" + (System.currentTimeMillis() + EMAIL_TOKEN_EXPIRY_MILLIS);
-    user.setEmailVerificationToken(encodedToken);
+    user.setEmailVerificationToken(token + "|" + (System.currentTimeMillis() + EMAIL_TOKEN_EXPIRY_MILLIS));
     updateUser(user);
     return token;
   }
@@ -1467,19 +1631,15 @@ public class DefaultUserService implements UserService {
     I18n i18n =
         i18nManager.getI18n(
             ObjectUtils.firstNonNull(
-                (Locale)
-                    userSettingService.getUserSetting(UserSettingKey.UI_LOCALE, user.getUsername()),
+                (Locale) userSettingService.getUserSetting(UserSettingKey.UI_LOCALE, user.getUsername()),
                 LocaleManager.DEFAULT_LOCALE));
     vars.put("i18n", i18n);
 
-    VelocityManager vm = new VelocityManager();
-    String messageBody = vm.render(vars, "verify_email_body_template_" + "v1");
-    String messageSubject = i18n.getString("verify_email_subject");
-
-    OutboundMessageResponse status =
-        emailMessageSender.sendMessage(messageSubject, messageBody, null, null, Set.of(user), true);
-
-    return status.getResponseObject() == EmailResponse.SENT;
+    String messageBody = new VelocityManager().render(vars, "verify_email_body_template_v1");
+    OutboundMessageResponse response =
+        emailMessageSender.sendMessage(
+            i18n.getString("verify_email_subject"), messageBody, null, null, Set.of(user), true);
+    return response.getResponseObject() == EmailResponse.SENT;
   }
 
   @Override
@@ -1490,18 +1650,12 @@ public class DefaultUserService implements UserService {
       return false;
     }
     String[] tokenParts = user.getEmailVerificationToken().split("\\|");
-    if (tokenParts.length != 2) {
+    if (tokenParts.length != 2 || System.currentTimeMillis() > Long.parseLong(tokenParts[1])) {
       return false;
     }
-    if (System.currentTimeMillis() > Long.parseLong(tokenParts[1])) {
-      return false;
-    }
-    // Someone else could have verified the same email with another account in the
-    // meantime
     if (getUserByVerifiedEmail(user.getEmail()) != null) {
       return false;
     }
-
     user.setEmailVerificationToken(null);
     user.setVerifiedEmail(user.getEmail());
     updateUser(user);
@@ -1515,13 +1669,6 @@ public class DefaultUserService implements UserService {
   }
 
   @Override
-  @Transactional(readOnly = true)
-  public List<User> getUsersWithOrgUnits(
-      @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull Set<UID> uids) {
-    return userStore.getUsersWithOrgUnits(orgUnitProperty, uids);
-  }
-
-  @Override
   public boolean isEmailVerified(User user) {
     return user.isEmailVerified();
   }
@@ -1530,5 +1677,18 @@ public class DefaultUserService implements UserService {
   @Transactional(readOnly = true)
   public User getUserByVerifiedEmail(String email) {
     return userStore.getUserByVerifiedEmail(email);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<User> getUsersWithOrgUnits(
+      @Nonnull UserOrgUnitProperty orgUnitProperty, @Nonnull Set<UID> uids) {
+    return userStore.getUsersWithOrgUnits(orgUnitProperty, uids);
+  }
+
+  @Transactional
+  @Override
+  public void setActiveLinkedAccounts(@Nonnull String actingUser, @Nonnull String activeUsername) {
+    userStore.setActiveLinkedAccounts(actingUser, activeUsername);
   }
 }

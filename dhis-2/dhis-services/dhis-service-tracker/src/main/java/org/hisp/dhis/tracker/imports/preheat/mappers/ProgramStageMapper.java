@@ -56,12 +56,17 @@ public interface ProgramStageMapper extends PreheatMapper<ProgramStage> {
   @Mapping(target = "program", qualifiedByName = "program")
   @Mapping(target = "repeatable")
   @Mapping(target = "referral")
-  @Mapping(target = "programStageDataElements")
+  // programStageDataElements is deliberately not mapped. It is the widest association on a program
+  // stage and mapping it initialized one DataElement entity per element. The data elements the
+  // import actually needs are projected by ProgramStageDataElementsSupplier instead. Read them
+  // through TrackerPreheat#getProgramStageDataElements, as the association is empty on a preheated
+  // stage.
   @Mapping(target = "enableUserAssignment")
   @Mapping(target = "validationStrategy")
   @Mapping(target = "featureType")
   @Mapping(target = "sharing")
   @Mapping(target = "notificationTemplates")
+  @Mapping(target = "blockEntryForm")
   ProgramStage map(ProgramStage programStage);
 
   @Named("program")

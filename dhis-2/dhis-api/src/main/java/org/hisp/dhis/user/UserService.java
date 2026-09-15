@@ -58,6 +58,10 @@ public interface UserService {
 
   String PW_NO_INTERNAL_LOGIN = "--[##no_internal_login##]--";
 
+  String TWO_FACTOR_CODE_APPROVAL_PREFIX = "APPROVAL_";
+
+  String TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME = "R_ENABLE_2FA";
+
   String RESTORE_PATH = "/dhis-web-login/index.html#/";
 
   String TBD_NAME = "(TBD)";
@@ -71,6 +75,16 @@ public interface UserService {
   int RECOVER_MAX_ATTEMPTS = 5;
 
   String RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify";
+
+  /**
+   * If the user's secret starts with the prefix `APPROVAL_`, then return true
+   *
+   * @param user The user to check.
+   * @return A boolean value.
+   */
+  static boolean hasTwoFactorSecretForApproval(User user) {
+    return user.getSecret().startsWith(TWO_FACTOR_CODE_APPROVAL_PREFIX);
+  }
 
   /**
    * Adds a User.
@@ -152,8 +166,6 @@ public interface UserService {
    * @return the User.
    */
   User getUserByEmail(String email);
-
-  User getUserByVerifiedEmail(String email);
 
   /**
    * Retrieves a collection of User with the given unique identifiers.
@@ -495,6 +507,19 @@ public interface UserService {
   UserDetails createUserDetails(User user);
 
   /**
+   * "If the current user is not the user being modified, and the current user has the authority to
+   * modify the user, then disable two-factor authentication for the user."
+   *
+   * <p>The first thing we do is get the user object from the database. If the user doesn't exist,
+   * we throw an exception
+   *
+   * @param currentUser The user who is making the request.
+   * @param userUid The user UID of the user to disable 2FA for.
+   * @param errors A Consumer<ErrorReport> object that will be called if there is an error.
+   */
+  void privilegedTwoFactorDisable(User currentUser, String userUid, Consumer<ErrorReport> errors);
+
+  /**
    * Checks if the input user can modify the other input user.
    *
    * @param currentUser The user who is trying to modify the user
@@ -505,6 +530,47 @@ public interface UserService {
    */
   boolean canCurrentUserCanModify(
       User currentUser, User userToModify, Consumer<ErrorReport> errors);
+
+  /**
+   * Generate a new two factor (TOTP) secret for the user, but prefix it with a special string so
+   * that we can tell the difference between a normal secret and an approval secret.
+   *
+   * @param user The user object that is being updated.
+   */
+  void generateTwoFactorOtpSecretForApproval(User user);
+
+  /**
+   * If the user has an OTP secret that starts with the approval prefix, remove the prefix and
+   * update the user property.
+   *
+   * @param user The user object that is being updated.
+   */
+  void approveTwoFactorSecret(User user, UserDetails actingUser);
+
+  /**
+   * "Disable 2FA authentication for the input user, by setting the secret to null."
+   *
+   * @param user The user object that you want to reset the 2FA for.
+   */
+  void resetTwoFactor(User user, UserDetails actingUser);
+
+  /**
+   * If the user has a secret, and the secret has not been approved, and the code is valid, then
+   * approve the secret and effectively enable 2FA.
+   *
+   * @param user The user object to enable 2FA authentication for.
+   * @param code The code that the user entered into the app
+   */
+  void enableTwoFa(User user, String code);
+
+  /**
+   * If the user has 2FA authentication enabled, and the code is valid, then disable 2FA
+   * authentication
+   *
+   * @param user The user object that you want to disable 2FA authentication for.
+   * @param code The code that the user entered
+   */
+  void disableTwoFa(User user, String code);
 
   /**
    * Register a failed 2FA disable attempt for the given user account.
@@ -520,6 +586,14 @@ public interface UserService {
    * @param username
    * @return
    */
+  boolean twoFaDisableIsLocked(String username);
+
+  /**
+   * Returns whether the 2FA disable endpoint is rate limited for the user.
+   *
+   * @param username the username
+   * @return true when the endpoint is locked
+   */
   boolean is2FADisableEndpointLocked(String username);
 
   /**
@@ -530,27 +604,37 @@ public interface UserService {
    */
   void registerSuccess2FADisable(String username);
 
-  /**
-   * Register a 2FA code sent attempt for the given user account.
-   *
-   * @param username
-   */
+  /** Register a 2FA code delivery attempt for the user. */
   void register2FACodeSentAttempt(String username);
 
   /**
-   * If the user has sent 2FA codes more than 4 times in the last 15 minutes, return true.
+   * Returns whether 2FA code delivery is rate limited for the user.
    *
-   * @param username
-   * @return
+   * @param username the username
+   * @return true when code delivery is locked
    */
   boolean is2FACodeSendingLocked(String username);
 
-  /**
-   * Reset the 2FA code sent attempts for the given user account.
-   *
-   * @param username
-   */
+  /** Reset 2FA code delivery attempts for the user. */
   void reset2FACodeSendAttempts(String username);
+
+  /**
+   * If the user has a role with the 2FA authentication required restriction, return true.
+   *
+   * @param userDetails The user object that is being checked for the role.
+   * @return A boolean value.
+   */
+  boolean hasTwoFactorRoleRestriction(UserDetails userDetails);
+
+  /**
+   * If the user is not the same as the user to modify, and the user has the proper acl permissions
+   * to modify the user, then the user can modify the user.
+   *
+   * @param before The state before the update.
+   * @param after The state after the update.
+   * @param userToModify The user object that is being updated.
+   */
+  void validateTwoFactorUpdate(boolean before, boolean after, User userToModify);
 
   /**
    * Get linked user accounts for the given user
@@ -562,23 +646,23 @@ public interface UserService {
   List<UserLookup> getLinkedUserAccounts(@Nonnull User actingUser);
 
   /**
-   * List all user's sessions
+   * List all sessions for the user identified by the supplied UID.
    *
-   * @param userUID
-   * @return
+   * @param userUID the user UID
+   * @return the user's sessions
    */
   List<SessionInformation> listSessions(String userUID);
 
   /**
-   * List all user's sessions
+   * List all sessions for the supplied principal.
    *
-   * @param principal
-   * @return
+   * @param principal the session principal
+   * @return the principal's sessions
    */
   List<SessionInformation> listSessions(UserDetails principal);
 
   /**
-   * Invalidate all sessions for all users WARNING: This does not work when using Redis sessions.
+   * Invalidate all sessions. This does not work when Redis sessions are used.
    */
   void invalidateAllSessions();
 
@@ -588,6 +672,14 @@ public interface UserService {
    * @param username the username of the user account.
    */
   void invalidateUserSessions(String username);
+
+  /**
+   * Returns the usernames of all users that are members of the user role with the given UID.
+   *
+   * @param roleUid the UID of the user role.
+   * @return a list of usernames.
+   */
+  List<String> getUsernamesByUserRole(@Nonnull UID roleUid);
 
   /**
    * Register a account recovery attempt for the given user account.
@@ -838,22 +930,8 @@ public interface UserService {
 
   CurrentUserGroupInfo getCurrentUserGroupInfo(String userUID);
 
-  /**
-   * Generate a new email verification token for the user and set it on the user object.
-   *
-   * @param user the user
-   * @return the generated token
-   */
   String generateAndSetNewEmailVerificationToken(User user);
 
-  /**
-   * Send email verification token to the user's email address.
-   *
-   * @param user the user
-   * @param token the verification token
-   * @param requestUrl the request URL
-   * @return true if the email was sent successfully, false otherwise
-   */
   boolean sendEmailVerificationToken(User user, String token, String requestUrl);
 
   boolean verifyEmail(String token);
@@ -861,6 +939,8 @@ public interface UserService {
   boolean isEmailVerified(User currentUser);
 
   User getUserByEmailVerificationToken(String token);
+
+  User getUserByVerifiedEmail(String email);
 
   /**
    * Method that retrieves all {@link User}s that have an entry for the {@link OrganisationUnit}s in
@@ -883,7 +963,5 @@ public interface UserService {
    * @param actingUser the acting/current user
    * @param activeUsername the username of the user to set as active
    */
-  // [SMS2FA]
-  // void setActiveLinkedAccounts(@Nonnull String actingUser, @Nonnull String
-  // activeUsername);
+  void setActiveLinkedAccounts(@Nonnull String actingUser, @Nonnull String activeUsername);
 }

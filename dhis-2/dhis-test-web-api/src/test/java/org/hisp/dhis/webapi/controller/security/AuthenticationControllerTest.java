@@ -29,11 +29,13 @@ package org.hisp.dhis.webapi.controller.security;
 
 import static org.hisp.dhis.common.CodeGenerator.generateSecureRandomBytes;
 import static org.hisp.dhis.security.twofa.TwoFactorAuthService.TWO_FACTOR_AUTH_REQUIRED_RESTRICTION_NAME;
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -59,6 +61,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.session.SessionRegistry;
 
@@ -402,6 +405,20 @@ class AuthenticationControllerTest extends DhisAuthenticationApiTest {
             .getResponse();
 
     assertEquals("/dhis-web-login", redirectResponse.getRedirectedUrl());
+  }
+
+  @Test
+  void testUpdatePasswordReachableWithoutAuthentication() throws Exception {
+    clearSecurityContext();
+
+    mvc.perform(
+            post("/auth/updatePassword")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"username\":\"admin\"}"))
+        .andExpect(status().isBadRequest())
+        .andExpect(
+            content()
+                .string(containsString("Username, old password and new password are required")));
   }
 
   private void loginWith2FACode(String code) {

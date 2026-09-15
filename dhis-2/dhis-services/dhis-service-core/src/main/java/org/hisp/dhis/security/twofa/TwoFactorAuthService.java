@@ -36,7 +36,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Consumer;
 import javax.annotation.Nonnull;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,9 +46,7 @@ import org.hisp.dhis.external.conf.ConfigurationKey;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.feedback.ConflictException;
 import org.hisp.dhis.feedback.ErrorCode;
-import org.hisp.dhis.feedback.ErrorReport;
 import org.hisp.dhis.feedback.ForbiddenException;
-import org.hisp.dhis.feedback.NotFoundException;
 import org.hisp.dhis.i18n.I18n;
 import org.hisp.dhis.i18n.I18nManager;
 import org.hisp.dhis.i18n.locale.LocaleManager;
@@ -280,33 +277,6 @@ public class TwoFactorAuthService {
     user.setSecret(null);
     user.setTwoFactorType(null);
     userService.updateUser(user, actingUser);
-  }
-
-  /**
-   * "If the current user is not the user being modified, and the current user has the authority to
-   * modify the user, then disable two-factor authentication for the user."
-   *
-   * @param currentUser The user who is making the request.
-   * @param userUid The user UID of the user to disable 2FA for.
-   * @param errors A Consumer<ErrorReport> object that will be called if there is an error.
-   */
-  @Transactional
-  public void privileged2FADisable(
-      @Nonnull User currentUser, @Nonnull String userUid, @Nonnull Consumer<ErrorReport> errors)
-      throws ForbiddenException, NotFoundException {
-    User user = userService.getUser(userUid);
-    if (user == null) {
-      throw new NotFoundException(ErrorCode.E6201);
-    }
-    if (currentUser.getUid().equals(user.getUid())
-        || !userService.canCurrentUserCanModify(currentUser, user, errors)) {
-      throw new ForbiddenException(ErrorCode.E3021);
-    }
-    UserDetails actingUser = UserDetails.fromUser(currentUser);
-    if (actingUser == null) {
-      throw new NotFoundException(ErrorCode.E6201);
-    }
-    reset2FA(user.getUsername(), actingUser);
   }
 
   /**

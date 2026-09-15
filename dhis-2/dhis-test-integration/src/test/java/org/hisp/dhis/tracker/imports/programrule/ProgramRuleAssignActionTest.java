@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2022, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@ package org.hisp.dhis.tracker.imports.programrule;
 import static org.hisp.dhis.programrule.ProgramRuleActionType.ASSIGN;
 import static org.hisp.dhis.tracker.Assertions.assertHasOnlyErrors;
 import static org.hisp.dhis.tracker.Assertions.assertHasOnlyWarnings;
+import static org.hisp.dhis.tracker.Assertions.assertNoErrors;
 import static org.hisp.dhis.tracker.imports.validation.ValidationCode.E1125;
 import static org.hisp.dhis.tracker.imports.validation.ValidationCode.E1307;
 import static org.hisp.dhis.tracker.imports.validation.ValidationCode.E1308;
@@ -58,7 +59,10 @@ import org.hisp.dhis.programrule.ProgramRuleVariableService;
 import org.hisp.dhis.programrule.ProgramRuleVariableSourceType;
 import org.hisp.dhis.setting.SettingKey;
 import org.hisp.dhis.setting.SystemSettingManager;
+import org.hisp.dhis.trackedentity.TrackedEntity;
 import org.hisp.dhis.trackedentity.TrackedEntityAttribute;
+import org.hisp.dhis.trackedentityattributevalue.TrackedEntityAttributeValue;
+import org.hisp.dhis.trackedentityattributevalue.TrackedEntityAttributeValueService;
 import org.hisp.dhis.tracker.TrackerTest;
 import org.hisp.dhis.tracker.imports.TrackerImportParams;
 import org.hisp.dhis.tracker.imports.TrackerImportService;
@@ -86,6 +90,8 @@ class ProgramRuleAssignActionTest extends TrackerTest {
 
   @Autowired private SystemSettingManager systemSettingManager;
 
+  @Autowired private TrackedEntityAttributeValueService attributeValueService;
+
   private Program program;
 
   private DataElement dataElement1;
@@ -93,6 +99,9 @@ class ProgramRuleAssignActionTest extends TrackerTest {
   private DataElement dataElement2;
 
   private DataElement optionDataElement;
+
+  /** Not a data element of program stage {@code NpsdDv6kKSO}. */
+  private DataElement dataElementNotInStage;
 
   private TrackedEntityAttribute attribute1;
 
@@ -107,6 +116,8 @@ class ProgramRuleAssignActionTest extends TrackerTest {
     dataElement2 = bundle.getPreheat().get(PreheatIdentifier.UID, DataElement.class, "DATAEL00002");
     optionDataElement =
         bundle.getPreheat().get(PreheatIdentifier.UID, DataElement.class, "DATAEL00005");
+    dataElementNotInStage =
+        bundle.getPreheat().get(PreheatIdentifier.UID, DataElement.class, "GieVkTxp4HG");
     attribute1 =
         bundle.getPreheat().get(PreheatIdentifier.UID, TrackedEntityAttribute.class, "dIVt4l5vIOa");
     TrackedEntityAttribute attribute2 =
@@ -143,6 +154,34 @@ class ProgramRuleAssignActionTest extends TrackerTest {
     ImportReport importReport = trackerImportService.importTracker(params, trackerObjects);
 
     assertHasOnlyWarnings(importReport, E1310);
+  }
+
+  @Test
+  void shouldImportWhenAttributeUsedToCalculateAssignedValueIsUpdatedInEnrollment()
+      throws IOException {
+    TrackedEntity trackedEntity = manager.get(TrackedEntity.class, "IOR1AXXl24H");
+    TrackedEntityAttribute attribute2 = manager.get(TrackedEntityAttribute.class, "fRGt4l6yIRb");
+    attributeValueService.addTrackedEntityAttributeValue(
+        new TrackedEntityAttributeValue(attribute1, trackedEntity, "Tom"));
+    attributeValueService.addTrackedEntityAttributeValue(
+        new TrackedEntityAttributeValue(attribute2, trackedEntity, "Tom"));
+    assignProgramRule();
+    dbmsManager.clearSession();
+
+    TrackerImportParams params = new TrackerImportParams();
+    params.setImportStrategy(TrackerImportStrategy.CREATE_AND_UPDATE);
+    TrackerObjects trackerObjects =
+        fromJson("tracker/programrule/te_enrollment_update_attribute_different_value.json");
+
+    ImportReport importReport = trackerImportService.importTracker(params, trackerObjects);
+
+    assertHasOnlyWarnings(importReport, E1310);
+    List<String> attributeValues =
+        manager.get(TrackedEntity.class, "IOR1AXXl24H").getTrackedEntityAttributeValues().stream()
+            .filter(av -> av.getAttribute().getUid().equals("dIVt4l5vIOa"))
+            .map(TrackedEntityAttributeValue::getValue)
+            .toList();
+    assertContainsOnly(List.of("John"), attributeValues);
   }
 
   @ParameterizedTest
@@ -286,6 +325,8 @@ class ProgramRuleAssignActionTest extends TrackerTest {
     assertHasOnlyWarnings(importReport, E1308);
     if (!hasValidValue) {
       assertHasOnlyErrors(importReport, E1125);
+    } else {
+      assertNoErrors(importReport);
     }
   }
 
@@ -305,6 +346,54 @@ class ProgramRuleAssignActionTest extends TrackerTest {
     assertHasOnlyWarnings(importReport, E1308);
   }
 
+  /**
+   * The rule engine runs after validation and {@code DataValuesValidator} runs again afterwards, on
+   * the payload the ASSIGN mutated. An ASSIGN to a data element absent from the payload adds a data
+   * value, so that second pass sees a data element the first pass never did.
+   *
+   * <p>Nothing rejects it because the data elements of the program stage are projected from the
+   * payload's data elements plus the data elements of all program rule actions, which {@link
+   * org.hisp.dhis.tracker.imports.TrackerIdentifierCollector} preheats. Narrowing that collection
+   * would leave the assigned data element out of the projection and E1305 would reject valid data.
+   */
+  @Test
+  void shouldImportWithWarningWhenAssignedDataElementIsNotInThePayload() throws IOException {
+    // DATAEL00002 belongs to program stage NpsdDv6kKSO but the payload only carries DATAEL00001
+    assignConstantToDataElementProgramRule();
+    TrackerImportParams params = new TrackerImportParams();
+    params.setImportStrategy(TrackerImportStrategy.CREATE_AND_UPDATE);
+
+    ImportReport importReport = trackerImportService.importTracker(params, eventWithDataValue());
+
+    // E1305 would be reported here if the assigned data element were not part of the projection
+    Assertions.assertAll(
+        () -> assertNoErrors(importReport),
+        () -> assertHasOnlyWarnings(importReport, E1308),
+        () ->
+            assertContainsOnly(List.of("ASSIGNED"), getValueForAssignedDataElement("D9PbzJY8bZZ")));
+  }
+
+  /**
+   * A rule effect is only executed if its target data element belongs to the event's program stage,
+   * a check {@code RuleActionEventMapper} makes against the projected data elements. A data element
+   * outside the stage must not be assigned.
+   */
+  @Test
+  void shouldNotAssignWhenDataElementIsNotPartOfTheProgramStage() throws IOException {
+    // GieVkTxp4HG is not a data element of program stage NpsdDv6kKSO
+    assignConstantToDataElementNotInStageProgramRule();
+    TrackerImportParams params = new TrackerImportParams();
+    params.setImportStrategy(TrackerImportStrategy.CREATE_AND_UPDATE);
+
+    ImportReport importReport = trackerImportService.importTracker(params, eventWithDataValue());
+
+    dbmsManager.clearSession();
+
+    Assertions.assertAll(
+        () -> assertNoErrors(importReport),
+        () -> assertIsEmpty(getValueForDataElement("D9PbzJY8bZZ", dataElementNotInStage.getUid())));
+  }
+
   private TrackerObjects getEvent(String eventUid, String occurredDate, String value)
       throws IOException {
     TrackerObjects trackerObjects = fromJson("tracker/programrule/event_without_date.json");
@@ -318,9 +407,26 @@ class ProgramRuleAssignActionTest extends TrackerTest {
     return trackerObjects;
   }
 
+  /**
+   * Event {@code D9PbzJY8bZZ} on program stage {@code NpsdDv6kKSO}, carrying a data value for
+   * {@code DATAEL00001} only. The payload has no {@code occurredAt}, which E1031 rejects, so one is
+   * set here. Its value does not matter to the callers.
+   */
+  private TrackerObjects eventWithDataValue() throws IOException {
+    TrackerObjects trackerObjects = fromJson("tracker/programrule/event_with_data_value.json");
+    org.hisp.dhis.tracker.imports.domain.Event event = trackerObjects.getEvents().get(0);
+    event.setOccurredAt(DateUtils.instantFromDateAsString("2019-01-28"));
+
+    return TrackerObjects.builder().events(List.of(event)).build();
+  }
+
   private List<String> getValueForAssignedDataElement(String eventUid) {
+    return getValueForDataElement(eventUid, "DATAEL00002");
+  }
+
+  private List<String> getValueForDataElement(String eventUid, String dataElementUid) {
     return manager.get(Event.class, eventUid).getEventDataValues().stream()
-        .filter(dv -> dv.getDataElement().equals("DATAEL00002"))
+        .filter(dv -> dv.getDataElement().equals(dataElementUid))
         .map(EventDataValue::getValue)
         .toList();
   }
@@ -344,6 +450,29 @@ class ProgramRuleAssignActionTest extends TrackerTest {
     programRuleService.addProgramRule(programRule);
     ProgramRuleAction programRuleAction =
         createProgramRuleAction(programRule, ASSIGN, optionDataElement, option);
+    programRuleActionService.addProgramRuleAction(programRuleAction);
+    programRule.getProgramRuleActions().add(programRuleAction);
+    programRuleService.updateProgramRule(programRule);
+  }
+
+  /** Assigns a constant to a data element of the program stage that the payload does not carry. */
+  private void assignConstantToDataElementProgramRule() {
+    ProgramRule programRule = createProgramRule('H', program, null, "true");
+    programRuleService.addProgramRule(programRule);
+    ProgramRuleAction programRuleAction =
+        createProgramRuleAction(programRule, ASSIGN, dataElement2, "'ASSIGNED'");
+    programRuleActionService.addProgramRuleAction(programRuleAction);
+    programRule.getProgramRuleActions().add(programRuleAction);
+    programRuleService.updateProgramRule(programRule);
+  }
+
+  /** Assigns a constant to a data element that is not part of the event's program stage. */
+  private void assignConstantToDataElementNotInStageProgramRule() {
+    ProgramRule programRule = createProgramRule('J', program, null, "true");
+    programRuleService.addProgramRule(programRule);
+    // GieVkTxp4HG is a NUMBER data element
+    ProgramRuleAction programRuleAction =
+        createProgramRuleAction(programRule, ASSIGN, dataElementNotInStage, "1");
     programRuleActionService.addProgramRuleAction(programRuleAction);
     programRule.getProgramRuleActions().add(programRuleAction);
     programRuleService.updateProgramRule(programRule);
