@@ -24,8 +24,8 @@
   "https://github.com/d2-ci/translations-app#v100.0.13",
   "https://github.com/d2-ci/usage-analytics-app#v101.1.2",
   "https://github.com/d2-ci/user-app#v100.11.2",
-  "https://github.com/d2-ci/user-profile-app#v100.8.2",
-  "https://github.com/d2-ci/login-app#v100.5.0",
+  "local:/path/to/dhis-core-apps/user-profile-app",
+  "local:/path/to/dhis-core-apps/login-app",
   "https://github.com/d2-ci/global-shell-app#v1.12.3",
   "https://github.com/d2-ci/line-listing-app#v102.4.1",
   "https://github.com/d2-ci/metadata-management-app#v0.179.0"
