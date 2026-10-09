@@ -32,7 +32,6 @@ package org.hisp.dhis.analytics.table;
 import static org.hisp.dhis.db.model.DataType.DOUBLE;
 import static org.hisp.dhis.db.model.DataType.TEXT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -40,7 +39,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -66,7 +64,6 @@ import org.hisp.dhis.setting.SystemSettingsProvider;
 import org.joda.time.DateTime;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -240,50 +237,5 @@ class AnalyticsTableServiceTest {
         new DateTime(2023, 1, 1, 0, 0).toDate());
 
     return table;
-  }
-
-  @Test
-  void testFullUpdateUsesLatestPartitionCleanupFromLastSuccessfulFullUpdate() {
-    when(settingsProvider.getCurrentSettings()).thenReturn(settings);
-    when(settings.getParallelJobsInAnalyticsTableExport()).thenReturn(1);
-    when(tableManager.getAnalyticsTableType()).thenReturn(AnalyticsTableType.DATA_VALUE);
-    when(tableManager.validState()).thenReturn(true);
-
-    List<AnalyticsTableColumn> columns =
-        List.of(
-            AnalyticsTableColumn.builder()
-                .name("dx")
-                .dataType(TEXT)
-                .selectExpression("dx")
-                .build());
-
-    when(tableManager.getAnalyticsTables(any()))
-        .thenReturn(
-            List.of(
-                new AnalyticsTable(
-                    AnalyticsTableType.DATA_VALUE, columns, List.of("dx"), Logged.UNLOGGED)),
-            List.of(
-                new AnalyticsTable(
-                    AnalyticsTableType.DATA_VALUE, columns, List.of("dx"), Logged.UNLOGGED)));
-
-    DateTime startTime = new DateTime(2025, 3, 28, 8, 0);
-    DateTime lastSuccessfulUpdate = new DateTime(2025, 3, 27, 1, 0);
-
-    AnalyticsTableUpdateParams params =
-        AnalyticsTableUpdateParams.newBuilder()
-            .startTime(startTime.toDate())
-            .lastSuccessfulUpdate(lastSuccessfulUpdate.toDate())
-            .build();
-
-    tableService.create(params, JobProgress.noop());
-
-    ArgumentCaptor<AnalyticsTableUpdateParams> paramsCaptor =
-        ArgumentCaptor.forClass(AnalyticsTableUpdateParams.class);
-    verify(tableManager, times(2)).getAnalyticsTables(paramsCaptor.capture());
-
-    List<AnalyticsTableUpdateParams> captured = paramsCaptor.getAllValues();
-    assertNull(captured.get(0).getForcedStartDate());
-    assertEquals(AnalyticsTablePartition.LATEST_PARTITION, captured.get(1).getLastYears());
-    assertEquals(lastSuccessfulUpdate.toDate(), captured.get(1).getForcedStartDate());
   }
 }
