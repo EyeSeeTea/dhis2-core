@@ -51,6 +51,35 @@ import org.springframework.core.io.ClassPathResource;
 @Slf4j
 class SystemUpdateNotificationServiceTest {
   @Test
+  void testCurrentVersionIgnoresForkSuffix() throws IOException {
+    JsonObject versions = fetchVersions("json/versions_max_2.38.1.json");
+
+    Semver withoutHotfix =
+        SystemUpdateNotificationService.parseCurrentVersion("2.37.7-spip-fork-1");
+    Semver withHotfix = SystemUpdateNotificationService.parseCurrentVersion("2.37.7.1-spip-fork-1");
+
+    assertEquals("2.37.7", withoutHotfix.getOriginalValue());
+    assertEquals("2.37.7.1", withHotfix.getOriginalValue());
+    assertEquals(
+        1, SystemUpdateNotificationService.getLatestNewerThan(withoutHotfix, versions).size());
+    assertTrue(SystemUpdateNotificationService.getLatestNewerThan(withHotfix, versions).isEmpty());
+  }
+
+  @Test
+  void testCurrentVersionPreservesReleaseAndSnapshotBehavior() {
+    assertEquals(
+        "2.42.7.1",
+        SystemUpdateNotificationService.parseCurrentVersion("2.42.7.1").getOriginalValue());
+    assertEquals(
+        "2.42.7." + Integer.MAX_VALUE,
+        SystemUpdateNotificationService.parseCurrentVersion("2.42.7-SNAPSHOT").getOriginalValue());
+    assertEquals(
+        "2.42.7." + Integer.MAX_VALUE,
+        SystemUpdateNotificationService.parseCurrentVersion("2.42.7-SNAPSHOT-spip-fork-1")
+            .getOriginalValue());
+  }
+
+  @Test
   void testGettingLatestPatchFor2_38() throws IOException {
     JsonObject versions = fetchVersions("json/versions_max_2.38.1.json");
 
