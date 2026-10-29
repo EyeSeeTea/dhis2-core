@@ -303,16 +303,23 @@ public class SystemUpdateNotificationService {
 
   public static Semver getCurrentVersion() {
     String buildVersion = DefaultSystemService.loadBuildProperties().getVersion();
+    return parseCurrentVersion(buildVersion);
+  }
+
+  static Semver parseCurrentVersion(String buildVersion) {
+    boolean snapshot = buildVersion.contains("SNAPSHOT");
+    // Fork qualifiers are not part of the upstream patch or hotfix version.
+    buildVersion = buildVersion.split("-", 2)[0];
 
     // If we are on a snapshot version, convert '-SNAPSHOT' to
     // '.Int.MAX_VALUE', so we can sort it on top of the list
-    if (buildVersion.contains("SNAPSHOT")) {
+    if (snapshot) {
       log.info(
           "We are running a SNAPSHOT version, "
               + "handle current patch version as higher than max. "
               + "This effectively disables system update notifications.");
 
-      buildVersion = buildVersion.replace("-SNAPSHOT", "." + Integer.MAX_VALUE);
+      buildVersion += "." + Integer.MAX_VALUE;
     }
 
     return new Semver(buildVersion);
