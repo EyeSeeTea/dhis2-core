@@ -57,6 +57,7 @@ import org.hisp.dhis.common.cache.Region;
 import org.hisp.dhis.common.event.CacheInvalidationEvent;
 import org.hisp.dhis.dxf2.webmessage.WebMessage;
 import org.hisp.dhis.dxf2.webmessage.WebMessageException;
+import org.hisp.dhis.feedback.ErrorReport;
 import org.hisp.dhis.feedback.ForbiddenException;
 import org.hisp.dhis.program.Program;
 import org.hisp.dhis.program.ProgramStage;
@@ -146,14 +147,10 @@ public class SharingController {
 
     Sharing sharing = new Sharing();
     sharing.getMeta().setAllowPublicAccess(aclService.canMakePublic(currentUserDetails, object));
-    sharing
-        .getMeta()
-        .setAllowExternalAccess(aclService.canMakeExternal(currentUserDetails, object));
 
     sharing.getObject().setId(object.getUid());
     sharing.getObject().setName(object.getDisplayName());
     sharing.getObject().setDisplayName(object.getDisplayName());
-    sharing.getObject().setExternalAccess(object.getSharing().isExternal());
 
     if (object.getSharing().getPublicAccess() == null) {
       String access;
@@ -252,18 +249,16 @@ public class SharingController {
       throw new ForbiddenException("You do not have manage access to this object.");
     }
 
+    List<ErrorReport> updateErrors = userService.validateSharingUpdate(object, currentUserDetails);
+    if (!updateErrors.isEmpty()) {
+      ErrorReport error = updateErrors.get(0);
+      return conflict(error.getErrorCode(), error.getArgs().toArray());
+    }
+
     Sharing sharing = renderService.fromJson(request.getInputStream(), Sharing.class);
 
     if (!AccessStringHelper.isValid(sharing.getObject().getPublicAccess())) {
       return conflict("Invalid public access string: " + sharing.getObject().getPublicAccess());
-    }
-
-    // ---------------------------------------------------------------------
-    // Ignore externalAccess if user is not allowed to make objects external
-    // ---------------------------------------------------------------------
-
-    if (aclService.canMakeExternal(currentUserDetails, object)) {
-      object.getSharing().setExternal(sharing.getObject().hasExternalAccess());
     }
 
     // ---------------------------------------------------------------------

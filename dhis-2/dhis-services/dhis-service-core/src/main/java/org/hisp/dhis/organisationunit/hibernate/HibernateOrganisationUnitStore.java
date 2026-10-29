@@ -82,31 +82,31 @@ public class HibernateOrganisationUnitStore
 
   @Override
   public List<String> getOrganisationUnitsUidsByUser(String username) {
-    String sql = getOrgUnitTablesUids(username, "usermembership");
-    return jdbcTemplate.queryForList(sql, String.class);
+    String sql = getOrgUnitTablesUids("usermembership");
+    return jdbcTemplate.queryForList(sql, String.class, username);
   }
 
   @Override
   public List<String> getSearchOrganisationUnitsUidsByUser(String username) {
-    String sql = getOrgUnitTablesUids(username, "userteisearchorgunits");
-    return jdbcTemplate.queryForList(sql, String.class);
+    String sql = getOrgUnitTablesUids("userteisearchorgunits");
+    return jdbcTemplate.queryForList(sql, String.class, username);
   }
 
   @Override
   public List<String> getDataViewOrganisationUnitsUidsByUser(String username) {
-    String sql = getOrgUnitTablesUids(username, "userdatavieworgunits");
-    return jdbcTemplate.queryForList(sql, String.class);
+    String sql = getOrgUnitTablesUids("userdatavieworgunits");
+    return jdbcTemplate.queryForList(sql, String.class, username);
   }
 
-  private static String getOrgUnitTablesUids(String username, String orgUnitTableName) {
+  private static String getOrgUnitTablesUids(String orgUnitTableName) {
     return """
         SELECT ou.uid
         FROM organisationunit ou
                  JOIN %s um ON ou.organisationunitid = um.organisationunitid
                  JOIN userinfo ui ON um.userinfoid = ui.userinfoid
-        WHERE ui.username = '%s';
+        WHERE ui.username = ?;
         """
-        .formatted(orgUnitTableName, username);
+        .formatted(orgUnitTableName);
   }
 
   @Override
@@ -197,7 +197,14 @@ public class HibernateOrganisationUnitStore
   public List<OrganisationUnit> getOrganisationUnits(OrganisationUnitQueryParams params) {
     SqlHelper hlp = new SqlHelper();
 
-    String hql = "select distinct o from OrganisationUnit o ";
+    // DISTINCT is only needed to collapse duplicate rows from a join that can legitimately
+    // produce more than one row per org unit: the children fetch join (one row per child) and
+    // the groups filter (one row per matching group when filtering by a set of group ids). A
+    // plain filter (levels, parents, query, maxLevels, geometryOnly) never joins a collection, so
+    // it can never produce a duplicate org unit row — adding DISTINCT there only costs Postgres a
+    // pointless sort/dedupe over the full entity, including geometry and attributeValues.
+    boolean requiresDistinct = params.isFetchChildren() || params.hasGroups();
+    String hql = "select " + (requiresDistinct ? "distinct " : "") + "o from OrganisationUnit o ";
 
     if (params.isFetchChildren()) {
       hql += "left join fetch o.children c ";
@@ -233,6 +240,10 @@ public class HibernateOrganisationUnitStore
 
     if (params.getMaxLevels() != null) {
       hql += hlp.whereAnd() + " o.hierarchyLevel <= :maxLevels ";
+    }
+
+    if (params.isGeometryOnly()) {
+      hql += hlp.whereAnd() + " o.geometry is not null ";
     }
 
     hql += "order by o." + params.getOrderBy().getName();

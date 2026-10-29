@@ -102,6 +102,14 @@ public interface AnalyticsTableManager {
   default void removeUpdatedData(List<AnalyticsTable> tables) {}
 
   /**
+   * Removes from the "latest" partition the data which is covered by the given tables, i.e. the
+   * data which the given table partitions hold after being populated.
+   *
+   * @param tables the list of {@link AnalyticsTable}.
+   */
+  default void removeLatestPartitionOverlap(List<AnalyticsTable> tables) {}
+
+  /**
    * Attempts to drop and then create analytics table.
    *
    * @param table the analytics table.
@@ -137,7 +145,7 @@ public interface AnalyticsTableManager {
   /**
    * Invokes analytics table SQL hooks for the table type.
    *
-   * @return the number of analytics table hooks being executed.
+   * @return the number of analytics table hooks executed, 0 when hooks are disabled.
    */
   int invokeAnalyticsTableSqlHooks();
 

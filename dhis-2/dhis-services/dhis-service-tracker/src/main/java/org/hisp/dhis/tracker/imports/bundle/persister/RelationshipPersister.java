@@ -34,7 +34,6 @@ import java.util.List;
 import java.util.Set;
 import org.hisp.dhis.common.UID;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
-import org.hisp.dhis.reservedvalue.ReservedValueService;
 import org.hisp.dhis.tracker.TrackerType;
 import org.hisp.dhis.tracker.imports.TrackerImportStrategy;
 import org.hisp.dhis.tracker.imports.bundle.TrackerBundle;
@@ -53,9 +52,8 @@ import org.springframework.stereotype.Component;
 public class RelationshipPersister
     extends AbstractTrackerPersister<Relationship, org.hisp.dhis.relationship.Relationship> {
 
-  public RelationshipPersister(
-      ReservedValueService reservedValueService, DhisConfigurationProvider config) {
-    super(reservedValueService, config);
+  public RelationshipPersister(DhisConfigurationProvider config) {
+    super(config);
   }
 
   @Override
@@ -122,6 +120,11 @@ public class RelationshipPersister
   @Override
   protected Set<UID> getUpdatedTrackedEntities(org.hisp.dhis.relationship.Relationship entity) {
     return entity.getTrackedEntityOrigins();
+  }
+
+  @Override
+  protected Set<UID> getUpdatedSingleEvents(org.hisp.dhis.relationship.Relationship entity) {
+    return entity.getSingleEventOrigins();
   }
 
   @Override

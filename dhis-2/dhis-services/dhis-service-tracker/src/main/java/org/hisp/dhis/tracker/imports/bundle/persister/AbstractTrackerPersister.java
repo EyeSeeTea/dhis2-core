@@ -56,7 +56,6 @@ import org.hisp.dhis.common.UID;
 import org.hisp.dhis.common.ValueType;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.fileresource.FileResource;
-import org.hisp.dhis.reservedvalue.ReservedValueService;
 import org.hisp.dhis.trackedentity.TrackedEntity;
 import org.hisp.dhis.trackedentity.TrackedEntityAttribute;
 import org.hisp.dhis.trackedentityattributevalue.TrackedEntityAttributeValue;
@@ -84,7 +83,6 @@ import org.hisp.dhis.user.UserDetails;
 public abstract class AbstractTrackerPersister<
         T extends TrackerDto, V extends BaseIdentifiableObject>
     implements TrackerPersister<T, V> {
-  protected final ReservedValueService reservedValueService;
   protected final DhisConfigurationProvider config;
 
   /**
@@ -158,6 +156,7 @@ public abstract class AbstractTrackerPersister<
               bundle.getUser(),
               changeLogs);
           bundle.addUpdatedTrackedEntities(getUpdatedTrackedEntities(convertedDto));
+          bundle.addUpdatedSingleEvents(getUpdatedSingleEvents(convertedDto));
         } else {
           if (trackerDto.getTrackerType() == TrackerType.RELATIONSHIP) {
             typeReport.getStats().incIgnored();
@@ -182,6 +181,7 @@ public abstract class AbstractTrackerPersister<
             typeReport.getStats().incUpdated();
             typeReport.addEntity(objectReport);
             bundle.addUpdatedTrackedEntities(getUpdatedTrackedEntities(convertedDto));
+            bundle.addUpdatedSingleEvents(getUpdatedSingleEvents(convertedDto));
           }
         }
 
@@ -246,6 +246,9 @@ public abstract class AbstractTrackerPersister<
    * Get Tracked Entities for enrollments, events or relationships that have been created or updated
    */
   protected abstract Set<UID> getUpdatedTrackedEntities(V entity);
+
+  /** Get single events that have been created or updated via a relationship pointing at them. */
+  protected abstract Set<UID> getUpdatedSingleEvents(V entity);
 
   /** Clones the event properties that may potentially be change logged */
   protected abstract V cloneEntityProperties(TrackerPreheat preheat, T trackerDto);
@@ -410,8 +413,16 @@ public abstract class AbstractTrackerPersister<
           String previousValue = isNew ? null : currentValue.getPlainValue();
           boolean valueChanged = isNew || !Objects.equals(previousValue, attribute.getValue());
 
-          if (isDelete && !isNew) {
-            delete(entityManager, preheat, currentValue, trackedEntity, user, changeLogs);
+          if (isDelete) {
+            if (!isNew) {
+              delete(entityManager, preheat, currentValue, trackedEntity, user, changeLogs);
+
+              // Leave the entry in the map: the DELETE is not flushed until the end of
+              // the run, so a later occurrence of the same TE+attribute in this run must
+              // still see it as existing (matching the pre-batch DB-read behaviour).
+            }
+
+            // If the value doesn't exist yet, deleting it is a no-op.
           } else if (valueChanged) {
             saveOrUpdateAttributeValue(
                 entityManager,
@@ -445,7 +456,7 @@ public abstract class AbstractTrackerPersister<
                         .setAttribute(
                             getTrackedEntityAttributeFromPreheat(preheat, attribute.getAttribute()))
                         .setTrackedEntity(trackedEntity))
-            .setStoredBy(attribute.getStoredBy())
+            .setStoredBy(user.getUsername())
             .setValue(attribute.getValue())
             .setLastUpdated(new Date());
 
@@ -458,8 +469,6 @@ public abstract class AbstractTrackerPersister<
         previousValue,
         user,
         changeLogs);
-
-    handleReservedValue(attributeToPersist);
   }
 
   private void delete(
@@ -538,14 +547,6 @@ public abstract class AbstractTrackerPersister<
             + " should never be NULL here if validation is enforced before commit.");
 
     return trackedEntityAttribute;
-  }
-
-  private void handleReservedValue(TrackedEntityAttributeValue attributeValue) {
-    if (Boolean.TRUE.equals(attributeValue.getAttribute().isGenerated())
-        && attributeValue.getAttribute().getTextPattern() != null) {
-      reservedValueService.useReservedValue(
-          attributeValue.getAttribute().getTextPattern(), attributeValue.getValue());
-    }
   }
 
   protected static String formatDate(Date date) {

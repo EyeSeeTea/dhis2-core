@@ -32,6 +32,7 @@ package org.hisp.dhis.tracker.export.event;
 import static org.hisp.dhis.common.OrganisationUnitSelectionMode.ACCESSIBLE;
 import static org.hisp.dhis.common.OrganisationUnitSelectionMode.SELECTED;
 import static org.hisp.dhis.security.acl.AccessStringHelper.DATA_READ;
+import static org.hisp.dhis.security.acl.AccessStringHelper.DEFAULT;
 import static org.hisp.dhis.security.acl.AccessStringHelper.READ;
 import static org.hisp.dhis.test.utils.Assertions.assertContainsOnly;
 import static org.hisp.dhis.test.utils.Assertions.assertHasSize;
@@ -56,6 +57,7 @@ import org.hisp.dhis.common.BaseIdentifiableObject;
 import org.hisp.dhis.common.IdentifiableObject;
 import org.hisp.dhis.common.IdentifiableObjectManager;
 import org.hisp.dhis.common.UID;
+import org.hisp.dhis.dataelement.DataElement;
 import org.hisp.dhis.eventdatavalue.EventDataValue;
 import org.hisp.dhis.feedback.BadRequestException;
 import org.hisp.dhis.feedback.ForbiddenException;
@@ -242,6 +244,46 @@ class EventExporterTest extends PostgresIntegrationTestBase {
                   dataValue.getDataElement(),
                   "Event " + event.getUid() + " should have data element GieVkTxp4HG");
             });
+  }
+
+  @Test
+  void shouldIncludeDeletedEventInSyncQueryWhenNotYetSynchronized()
+      throws ForbiddenException, BadRequestException {
+    Event event = get(Event.class, "D9PbzJY8bJM");
+    event.setDeleted(true);
+    manager.update(event);
+    manager.flush();
+
+    EventOperationParams params =
+        EventOperationParams.builder()
+            .events(Set.of(UID.of("D9PbzJY8bJM")))
+            .synchronizationQuery(true)
+            .includeDeleted(true)
+            .build();
+
+    assertContainsOnly(List.of("D9PbzJY8bJM"), getEvents(params));
+  }
+
+  @Test
+  void shouldExcludeDeletedEventFromSyncQueryWhenAlreadySynchronized()
+      throws ForbiddenException, BadRequestException {
+    Event event = get(Event.class, "D9PbzJY8bJM");
+    event.setDeleted(true);
+    manager.update(event);
+    manager.flush();
+
+    eventService.updateEventsSyncTimestamp(
+        List.of("D9PbzJY8bJM"), new Date(System.currentTimeMillis() + 60_000));
+    manager.flush();
+
+    EventOperationParams params =
+        EventOperationParams.builder()
+            .events(Set.of(UID.of("D9PbzJY8bJM")))
+            .synchronizationQuery(true)
+            .includeDeleted(true)
+            .build();
+
+    assertIsEmpty(getEvents(params));
   }
 
   @Test
@@ -435,6 +477,30 @@ class EventExporterTest extends PostgresIntegrationTestBase {
                                             .collect(Collectors.toSet()))))
             .toList();
     assertAll("all events should have the same category option combo and options", executables);
+  }
+
+  @Test
+  void shouldReturnEventsForWithoutRegistrationProgramGivenOrgUnitModeSelected()
+      throws ForbiddenException, BadRequestException {
+    EventOperationParams params =
+        operationParamsBuilder
+            .orgUnit(UID.of("DiszpKrYNg8"))
+            .orgUnitMode(SELECTED)
+            .program(UID.of("iS7eutanDry"))
+            .programStage(UID.of("qLZC0lvvxQH"))
+            .build();
+
+    List<Event> events = eventService.findEvents(params);
+
+    assertContainsOnly(
+        List.of(
+            "QRYjLTiJTrA",
+            "kWjSezkXHVp",
+            "OTmjvJDn0Fu",
+            "ck7DzdxqLqA",
+            "lumVtWwwy0O",
+            "cadc5eGj0j7"),
+        uids(events));
   }
 
   @Test
@@ -719,6 +785,30 @@ class EventExporterTest extends PostgresIntegrationTestBase {
     assertIsEmpty(getEvents(operationParamsBuilder.build()));
   }
 
+  @Test
+  void shouldNotReturnDataElementValueWhenUserCannotReadDataElement()
+      throws ForbiddenException, BadRequestException {
+    // Remove metadata read access to DATAEL00001 for the basic user. The event stays accessible,
+    // but the value of the restricted data element must not be returned while the other data
+    // elements of the event still are.
+    DataElement dataElement = get(DataElement.class, "DATAEL00001");
+    dataElement.getSharing().setPublicAccess(DEFAULT);
+    manager.updateNoAcl(dataElement);
+    manager.flush();
+    manager.clear();
+
+    injectSecurityContextUser(userService.getUser("Z7870757a75"));
+
+    EventOperationParams params =
+        EventOperationParams.builder().events(Set.of(UID.of("D9PbzJY8bJM"))).build();
+
+    List<Event> events = eventService.findEvents(params);
+
+    assertContainsOnly(
+        Set.of("DATAEL00002", "DATAEL00005", "DATAEL00006", "DATAEL00007"),
+        dataElements(events.get(0)));
+  }
+
   private <T extends IdentifiableObject> T get(Class<T> type, String uid) {
     T t = manager.get(type, uid);
     assertNotNull(
@@ -736,6 +826,12 @@ class EventExporterTest extends PostgresIntegrationTestBase {
 
   private static List<String> uids(List<? extends BaseIdentifiableObject> identifiableObject) {
     return identifiableObject.stream().map(BaseIdentifiableObject::getUid).toList();
+  }
+
+  private static Set<String> dataElements(Event event) {
+    return event.getEventDataValues().stream()
+        .map(EventDataValue::getDataElement)
+        .collect(Collectors.toSet());
   }
 
   private void updatePublicAccessSharing(

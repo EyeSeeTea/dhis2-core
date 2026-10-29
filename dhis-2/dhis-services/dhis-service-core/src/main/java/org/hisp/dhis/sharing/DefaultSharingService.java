@@ -29,6 +29,7 @@
  */
 package org.hisp.dhis.sharing;
 
+import java.util.List;
 import javax.annotation.Nonnull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -78,6 +79,13 @@ public class DefaultSharingService implements SharingService {
 
     BaseIdentifiableObject object = (BaseIdentifiableObject) entity;
 
+    List<ErrorReport> updateErrors =
+        userService.validateSharingUpdate(entity, CurrentUserUtil.getCurrentUserDetails());
+    if (!updateErrors.isEmpty()) {
+      updateErrors.forEach(objectReport::addErrorReport);
+      return objectReport;
+    }
+
     if ((object instanceof SystemDefaultMetadataObject)
         && ((SystemDefaultMetadataObject) object).isDefault()) {
       objectReport.addErrorReport(
@@ -94,14 +102,6 @@ public class DefaultSharingService implements SharingService {
       objectReport.addErrorReport(
           new ErrorReport(Sharing.class, ErrorCode.E3015, sharing.getPublicAccess())
               .setErrorKlass(entityClass));
-    }
-
-    // ---------------------------------------------------------------------
-    // Ignore externalAccess if user is not allowed to make objects external
-    // ---------------------------------------------------------------------
-
-    if (aclService.canMakeClassExternal(CurrentUserUtil.getCurrentUserDetails(), entityClass)) {
-      object.getSharing().setExternal(sharing.isExternal());
     }
 
     // ---------------------------------------------------------------------

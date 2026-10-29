@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2022, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -33,9 +33,9 @@ import static org.hisp.dhis.test.TestBase.createOrganisationUnit;
 import static org.hisp.dhis.test.utils.Assertions.assertIsEmpty;
 import static org.hisp.dhis.tracker.imports.validation.validator.AssertValidations.assertHasError;
 import static org.hisp.dhis.tracker.imports.validation.validator.AssertValidations.assertNoErrors;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -45,7 +45,7 @@ import org.hisp.dhis.dataelement.DataElement;
 import org.hisp.dhis.event.EventStatus;
 import org.hisp.dhis.eventdatavalue.EventDataValue;
 import org.hisp.dhis.fileresource.FileResource;
-import org.hisp.dhis.option.Option;
+import org.hisp.dhis.fileresource.FileResourceDomain;
 import org.hisp.dhis.option.OptionSet;
 import org.hisp.dhis.organisationunit.OrganisationUnit;
 import org.hisp.dhis.program.ProgramStage;
@@ -58,9 +58,12 @@ import org.hisp.dhis.tracker.imports.bundle.TrackerBundle;
 import org.hisp.dhis.tracker.imports.domain.DataValue;
 import org.hisp.dhis.tracker.imports.domain.Event;
 import org.hisp.dhis.tracker.imports.domain.MetadataIdentifier;
+import org.hisp.dhis.tracker.imports.preheat.ProgramStageDataElements;
 import org.hisp.dhis.tracker.imports.preheat.TrackerPreheat;
 import org.hisp.dhis.tracker.imports.validation.Reporter;
 import org.hisp.dhis.tracker.imports.validation.ValidationCode;
+import org.hisp.dhis.user.User;
+import org.hisp.dhis.user.UserDetails;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -83,6 +86,8 @@ class DataValuesValidatorTest {
   private static final String PROGRAM_STAGE_UID = "programStageUid";
 
   private static final String DATA_ELEMENT_UID = "dataElement";
+
+  private static final String MANDATORY_DATA_ELEMENT_UID = UID.generate().getValue();
 
   private static final String ORGANISATION_UNIT_UID = UID.generate().getValue();
 
@@ -138,6 +143,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(dataElement);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -160,6 +166,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(dataElement);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -184,7 +191,7 @@ class DataValuesValidatorTest {
     programStage.setAutoFields();
     ProgramStageDataElement mandatoryStageElement1 = new ProgramStageDataElement();
     DataElement mandatoryElement1 = new DataElement();
-    mandatoryElement1.setUid("MANDATORY_DE");
+    mandatoryElement1.setUid(MANDATORY_DATA_ELEMENT_UID);
     mandatoryStageElement1.setDataElement(mandatoryElement1);
     mandatoryStageElement1.setCompulsory(true);
     ProgramStageDataElement mandatoryStageElement2 = new ProgramStageDataElement();
@@ -195,6 +202,7 @@ class DataValuesValidatorTest {
     programStage.setProgramStageDataElements(
         Set.of(mandatoryStageElement1, mandatoryStageElement2));
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(programStage))).thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -220,7 +228,7 @@ class DataValuesValidatorTest {
     programStage.setValidationStrategy(ValidationStrategy.ON_COMPLETE);
     ProgramStageDataElement mandatoryStageElement1 = new ProgramStageDataElement();
     DataElement mandatoryElement1 = new DataElement();
-    mandatoryElement1.setUid("MANDATORY_DE");
+    mandatoryElement1.setUid(MANDATORY_DATA_ELEMENT_UID);
     mandatoryStageElement1.setDataElement(mandatoryElement1);
     mandatoryStageElement1.setCompulsory(true);
     ProgramStageDataElement mandatoryStageElement2 = new ProgramStageDataElement();
@@ -231,6 +239,7 @@ class DataValuesValidatorTest {
     programStage.setProgramStageDataElements(
         Set.of(mandatoryStageElement1, mandatoryStageElement2));
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(programStage))).thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -259,7 +268,7 @@ class DataValuesValidatorTest {
     programStage.setValidationStrategy(ValidationStrategy.ON_UPDATE_AND_INSERT);
     ProgramStageDataElement mandatoryStageElement1 = new ProgramStageDataElement();
     DataElement mandatoryElement1 = new DataElement();
-    mandatoryElement1.setUid("MANDATORY_DE");
+    mandatoryElement1.setUid(MANDATORY_DATA_ELEMENT_UID);
     mandatoryStageElement1.setDataElement(mandatoryElement1);
     mandatoryStageElement1.setCompulsory(true);
     ProgramStageDataElement mandatoryStageElement2 = new ProgramStageDataElement();
@@ -270,8 +279,10 @@ class DataValuesValidatorTest {
     programStage.setProgramStageDataElements(
         Set.of(mandatoryStageElement1, mandatoryStageElement2));
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(programStage))).thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
     when(preheat.getEvent(eventUid))
-        .thenReturn(event(eventUid, savedStatus, Set.of("MANDATORY_DE", DATA_ELEMENT_UID)));
+        .thenReturn(
+            event(eventUid, savedStatus, Set.of(MANDATORY_DATA_ELEMENT_UID, DATA_ELEMENT_UID)));
 
     Event event =
         Event.builder()
@@ -300,7 +311,7 @@ class DataValuesValidatorTest {
     programStage.setValidationStrategy(ValidationStrategy.ON_UPDATE_AND_INSERT);
     ProgramStageDataElement mandatoryStageElement1 = new ProgramStageDataElement();
     DataElement mandatoryElement1 = new DataElement();
-    mandatoryElement1.setUid("MANDATORY_DE");
+    mandatoryElement1.setUid(MANDATORY_DATA_ELEMENT_UID);
     mandatoryStageElement1.setDataElement(mandatoryElement1);
     mandatoryStageElement1.setCompulsory(true);
     ProgramStageDataElement mandatoryStageElement2 = new ProgramStageDataElement();
@@ -311,6 +322,7 @@ class DataValuesValidatorTest {
     programStage.setProgramStageDataElements(
         Set.of(mandatoryStageElement1, mandatoryStageElement2));
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(programStage))).thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
     when(preheat.getEvent(eventUid)).thenReturn(event(eventUid, savedStatus));
 
     Event event =
@@ -345,6 +357,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(dataElement, true);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue dataValue = dataValue();
     dataValue.setDataElement(MetadataIdentifier.ofCode("DE_424050"));
@@ -381,6 +394,7 @@ class DataValuesValidatorTest {
     mandatoryStageElement1.setCompulsory(true);
     programStage.setProgramStageDataElements(Set.of(mandatoryStageElement1));
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(programStage))).thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue notPresentDataValue = dataValue();
     notPresentDataValue.setDataElement(MetadataIdentifier.ofUid("de_not_present_in_program_stage"));
@@ -416,6 +430,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(dataElement);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue dataValue = dataValue();
     dataValue.setDataElement(MetadataIdentifier.ofCode("DE_424050"));
@@ -444,6 +459,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(validDataElement);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -453,9 +469,6 @@ class DataValuesValidatorTest {
             .dataValues(Set.of(validDataValue))
             .build();
 
-    when(bundle.getStrategy(event)).thenReturn(TrackerImportStrategy.CREATE);
-
-    when(bundle.getStrategy(event)).thenReturn(TrackerImportStrategy.CREATE);
     validator.validate(reporter, bundle, event);
 
     assertHasError(reporter, event, ValidationCode.E1302);
@@ -470,6 +483,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(validDataElement, false);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setValue(null);
@@ -495,6 +509,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(validDataElement, true);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setValue(null);
@@ -521,6 +536,7 @@ class DataValuesValidatorTest {
     programStage.setValidationStrategy(ValidationStrategy.ON_UPDATE_AND_INSERT);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setValue(null);
@@ -548,6 +564,7 @@ class DataValuesValidatorTest {
     programStage.setValidationStrategy(ValidationStrategy.ON_UPDATE_AND_INSERT);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
     when(preheat.getEvent(eventUid)).thenReturn(new org.hisp.dhis.program.Event());
 
     DataValue validDataValue = dataValue();
@@ -575,6 +592,7 @@ class DataValuesValidatorTest {
     programStage.setValidationStrategy(ValidationStrategy.ON_UPDATE_AND_INSERT);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setValue(null);
@@ -601,6 +619,7 @@ class DataValuesValidatorTest {
     programStage.setValidationStrategy(ValidationStrategy.ON_COMPLETE);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setValue(null);
@@ -627,6 +646,7 @@ class DataValuesValidatorTest {
     programStage.setValidationStrategy(ValidationStrategy.ON_COMPLETE);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setValue(null);
@@ -652,6 +672,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(validDataElement, true);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setValue("1");
@@ -677,6 +698,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(validDataElement, true);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setValue("1");
@@ -702,6 +724,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(validDataElement, true);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setValue("1");
@@ -727,6 +750,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(validDataElement, false);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setValue(null);
@@ -745,25 +769,8 @@ class DataValuesValidatorTest {
 
   @Test
   void failValidationWhenFileResourceIsAlreadyAssigned() {
-    DataElement validDataElement = dataElement(ValueType.FILE_RESOURCE);
-    when(preheat.getDataElement(MetadataIdentifier.ofUid(DATA_ELEMENT_UID)))
-        .thenReturn(validDataElement);
-
-    ProgramStage programStage = programStage(validDataElement);
-    when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
-        .thenReturn(programStage);
-
-    FileResource fileResource = new FileResource();
-    fileResource.setAssigned(true);
-    DataValue validDataValue = dataValue("QX4LpiTZmUH");
-    when(preheat.get(FileResource.class, validDataValue.getValue())).thenReturn(fileResource);
-    Event event =
-        Event.builder()
-            .event(UID.generate())
-            .programStage(idSchemes.toMetadataIdentifier(programStage))
-            .status(EventStatus.ACTIVE)
-            .dataValues(Set.of(validDataValue))
-            .build();
+    FileResource fileResource = dataValueFile(true);
+    Event event = fileEvent(UID.generate(), fileResource);
 
     when(bundle.getStrategy(event)).thenReturn(TrackerImportStrategy.CREATE);
 
@@ -771,9 +778,25 @@ class DataValuesValidatorTest {
 
     assertHasError(reporter, event, ValidationCode.E1009);
 
+    // a file without a recorded owner is not free to be bound to another event
     when(bundle.getStrategy(event)).thenReturn(TrackerImportStrategy.UPDATE);
 
     reporter = new Reporter(idSchemes);
+
+    validator.validate(reporter, bundle, event);
+
+    assertHasError(reporter, event, ValidationCode.E1009);
+  }
+
+  @Test
+  void successValidationWhenEventAlreadyHoldsAssignedFileResource() {
+    FileResource fileResource = dataValueFile(true);
+    UID uid = UID.generate();
+    Event event = fileEvent(uid, fileResource);
+    org.hisp.dhis.program.Event savedEvent = new org.hisp.dhis.program.Event();
+    savedEvent.setEventDataValues(
+        Set.of(new EventDataValue(DATA_ELEMENT_UID, fileResource.getUid())));
+    when(preheat.getEvent(uid)).thenReturn(savedEvent);
 
     validator.validate(reporter, bundle, event);
 
@@ -781,26 +804,26 @@ class DataValuesValidatorTest {
   }
 
   @Test
+  void failValidationWhenOnlyAnotherDataElementOfTheEventHoldsFileResource() {
+    FileResource fileResource = dataValueFile(true);
+    fileResource.setFileResourceOwner(UID.generate().getValue());
+    UID uid = UID.generate();
+    Event event = fileEvent(uid, fileResource);
+    org.hisp.dhis.program.Event savedEvent = new org.hisp.dhis.program.Event();
+    savedEvent.setEventDataValues(
+        Set.of(new EventDataValue(MANDATORY_DATA_ELEMENT_UID, fileResource.getUid())));
+    when(preheat.getEvent(uid)).thenReturn(savedEvent);
+    when(bundle.getStrategy(event)).thenReturn(TrackerImportStrategy.UPDATE);
+
+    validator.validate(reporter, bundle, event);
+
+    assertHasError(reporter, event, ValidationCode.E1009);
+  }
+
+  @Test
   void validateFileResourceOwner() {
-    DataElement validDataElement = dataElement(ValueType.FILE_RESOURCE);
-    when(preheat.getDataElement(MetadataIdentifier.ofUid(DATA_ELEMENT_UID)))
-        .thenReturn(validDataElement);
-
-    ProgramStage programStage = programStage(validDataElement);
-    when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
-        .thenReturn(programStage);
-
-    FileResource fileResource = new FileResource();
-    fileResource.setAssigned(true);
-    DataValue validDataValue = dataValue("QX4LpiTZmUH");
-    when(preheat.get(FileResource.class, validDataValue.getValue())).thenReturn(fileResource);
-    Event event =
-        Event.builder()
-            .event(UID.generate())
-            .programStage(idSchemes.toMetadataIdentifier(programStage))
-            .status(EventStatus.ACTIVE)
-            .dataValues(Set.of(validDataValue))
-            .build();
+    FileResource fileResource = dataValueFile(true);
+    Event event = fileEvent(UID.generate(), fileResource);
 
     when(bundle.getStrategy(event)).thenReturn(TrackerImportStrategy.CREATE);
 
@@ -808,7 +831,7 @@ class DataValuesValidatorTest {
 
     assertHasError(reporter, event, ValidationCode.E1009);
 
-    event.setEvent(UID.generate());
+    event = fileEvent(UID.generate(), fileResource);
     UID uid = UID.generate();
     fileResource.setFileResourceOwner(uid.getValue());
 
@@ -820,12 +843,64 @@ class DataValuesValidatorTest {
 
     assertHasError(reporter, event, ValidationCode.E1009);
 
-    event.setEvent(uid);
-    fileResource.setFileResourceOwner(uid.getValue());
+    event = fileEvent(uid, fileResource);
 
     when(bundle.getStrategy(event)).thenReturn(TrackerImportStrategy.UPDATE);
 
     reporter = new Reporter(idSchemes);
+
+    validator.validate(reporter, bundle, event);
+
+    assertIsEmpty(reporter.getErrors());
+  }
+
+  @Test
+  void failValidationWhenFileResourceIsOfAnotherDomain() {
+    FileResource fileResource = dataValueFile(false);
+    fileResource.setDomain(FileResourceDomain.DOCUMENT);
+    Event event = fileEvent(UID.generate(), fileResource);
+
+    validator.validate(reporter, bundle, event);
+
+    assertHasError(reporter, event, ValidationCode.E1004);
+  }
+
+  @Test
+  void failValidationWhenFileResourceWasUploadedByAnotherUser() {
+    FileResource fileResource = dataValueFile(false);
+    fileResource.setCreatedBy(user(1L));
+    Event event = fileEvent(UID.generate(), fileResource);
+    UserDetails importer = mock(UserDetails.class);
+    when(importer.getId()).thenReturn(2L);
+    when(bundle.getUser()).thenReturn(importer);
+
+    validator.validate(reporter, bundle, event);
+
+    assertHasError(reporter, event, ValidationCode.E1004);
+  }
+
+  @Test
+  void successValidationWhenFileResourceWasUploadedByImporter() {
+    FileResource fileResource = dataValueFile(false);
+    fileResource.setCreatedBy(user(1L));
+    Event event = fileEvent(UID.generate(), fileResource);
+    UserDetails importer = mock(UserDetails.class);
+    when(importer.getId()).thenReturn(1L);
+    when(bundle.getUser()).thenReturn(importer);
+
+    validator.validate(reporter, bundle, event);
+
+    assertIsEmpty(reporter.getErrors());
+  }
+
+  @Test
+  void successValidationWhenSuperuserImportsFileResourceOfAnotherUser() {
+    FileResource fileResource = dataValueFile(false);
+    fileResource.setCreatedBy(user(1L));
+    Event event = fileEvent(UID.generate(), fileResource);
+    UserDetails importer = mock(UserDetails.class);
+    when(importer.isSuper()).thenReturn(true);
+    when(bundle.getUser()).thenReturn(importer);
 
     validator.validate(reporter, bundle, event);
 
@@ -855,20 +930,18 @@ class DataValuesValidatorTest {
     DataValue nullDataValue = dataValue(null);
 
     OptionSet optionSet = new OptionSet();
-    Option option = new Option();
-    option.setCode("CODE");
-    Option option1 = new Option();
-    option1.setCode("CODE1");
-    optionSet.setOptions(List.of(option, option1));
+    optionSet.setId(1L);
 
     DataElement dataElement = dataElement();
     dataElement.setOptionSet(optionSet);
     when(preheat.getDataElement(MetadataIdentifier.ofUid(DATA_ELEMENT_UID)))
         .thenReturn(dataElement);
+    when(preheat.isValidOptionCode(1L, "CODE")).thenReturn(true);
 
     ProgramStage programStage = programStage(dataElement);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -889,20 +962,18 @@ class DataValuesValidatorTest {
     validDataValue.setDataElement(MetadataIdentifier.ofUid(DATA_ELEMENT_UID));
 
     OptionSet optionSet = new OptionSet();
-    Option option = new Option();
-    option.setCode("CODE");
-    Option option1 = new Option();
-    option1.setCode("CODE1");
-    optionSet.setOptions(List.of(option, option1));
+    optionSet.setId(1L);
 
     DataElement dataElement = dataElement();
     dataElement.setOptionSet(optionSet);
     when(preheat.getDataElement(MetadataIdentifier.ofUid(DATA_ELEMENT_UID)))
         .thenReturn(dataElement);
+    when(preheat.isValidOptionCode(1L, "value")).thenReturn(false);
 
     ProgramStage programStage = programStage(dataElement);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -923,20 +994,19 @@ class DataValuesValidatorTest {
     DataValue nullDataValue = dataValue(null);
 
     OptionSet optionSet = new OptionSet();
-    Option option = new Option();
-    option.setCode("CODE");
-    Option option1 = new Option();
-    option1.setCode("CODE1");
-    optionSet.setOptions(List.of(option, option1));
+    optionSet.setId(1L);
 
     DataElement dataElement = dataElement(ValueType.MULTI_TEXT);
     dataElement.setOptionSet(optionSet);
     when(preheat.getDataElement(MetadataIdentifier.ofUid(DATA_ELEMENT_UID)))
         .thenReturn(dataElement);
+    when(preheat.isValidOptionCode(1L, "CODE")).thenReturn(true);
+    when(preheat.isValidOptionCode(1L, "CODE1")).thenReturn(true);
 
     ProgramStage programStage = programStage(dataElement);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -957,20 +1027,19 @@ class DataValuesValidatorTest {
     validDataValue.setDataElement(MetadataIdentifier.ofUid(DATA_ELEMENT_UID));
 
     OptionSet optionSet = new OptionSet();
-    Option option = new Option();
-    option.setCode("CODE");
-    Option option1 = new Option();
-    option1.setCode("CODE1");
-    optionSet.setOptions(List.of(option, option1));
+    optionSet.setId(1L);
 
     DataElement dataElement = dataElement(ValueType.MULTI_TEXT);
     dataElement.setOptionSet(optionSet);
     when(preheat.getDataElement(MetadataIdentifier.ofUid(DATA_ELEMENT_UID)))
         .thenReturn(dataElement);
+    when(preheat.isValidOptionCode(1L, "CODE1")).thenReturn(true);
+    when(preheat.isValidOptionCode(1L, "CODE2")).thenReturn(false);
 
     ProgramStage programStage = programStage(dataElement);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -996,6 +1065,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(validDataElement);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -1024,6 +1094,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(validDataElement);
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     Event event =
         Event.builder()
@@ -1046,6 +1117,7 @@ class DataValuesValidatorTest {
     ProgramStage programStage = programStage(dataElement());
     when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
         .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
 
     DataValue validDataValue = dataValue();
     validDataValue.setDataElement(MetadataIdentifier.ofUid(DATA_ELEMENT_UID));
@@ -1080,6 +1152,37 @@ class DataValuesValidatorTest {
     event.setUid(uid.getValue());
     event.setStatus(status);
     return event;
+  }
+
+  private FileResource dataValueFile(boolean assigned) {
+    FileResource fileResource = new FileResource();
+    fileResource.setUid("QX4LpiTZmUH");
+    fileResource.setDomain(FileResourceDomain.DATA_VALUE);
+    fileResource.setAssigned(assigned);
+    return fileResource;
+  }
+
+  private Event fileEvent(UID uid, FileResource fileResource) {
+    DataElement fileDataElement = dataElement(ValueType.FILE_RESOURCE);
+    when(preheat.getDataElement(MetadataIdentifier.ofUid(DATA_ELEMENT_UID)))
+        .thenReturn(fileDataElement);
+    ProgramStage programStage = programStage(fileDataElement);
+    when(preheat.getProgramStage(MetadataIdentifier.ofUid(PROGRAM_STAGE_UID)))
+        .thenReturn(programStage);
+    stubProgramStageDataElements(programStage);
+    when(preheat.get(FileResource.class, fileResource.getUid())).thenReturn(fileResource);
+    return Event.builder()
+        .event(uid)
+        .programStage(idSchemes.toMetadataIdentifier(programStage))
+        .status(EventStatus.ACTIVE)
+        .dataValues(Set.of(dataValue(fileResource.getUid())))
+        .build();
+  }
+
+  private static User user(long id) {
+    User user = new User();
+    user.setId(id);
+    return user;
   }
 
   private DataElement dataElement(ValueType type) {
@@ -1127,6 +1230,33 @@ class DataValuesValidatorTest {
         new ProgramStageDataElement(programStage, dataElement);
     programStageDataElement.setCompulsory(compulsory);
     return Set.of(programStageDataElement);
+  }
+
+  /**
+   * Stubs the projected data elements of the given stage from its {@code programStageDataElements},
+   * which is what {@link
+   * org.hisp.dhis.tracker.imports.preheat.supplier.ProgramStageDataElementsSupplier} produces at
+   * runtime. The association itself is not mapped into the preheat anymore, so the validator reads
+   * the projection instead.
+   */
+  private void stubProgramStageDataElements(ProgramStage programStage) {
+    Set<ProgramStageDataElement> psdes = programStage.getProgramStageDataElements();
+    // read the idScheme off the mock, as the supplier does, so tests overriding it are honoured.
+    // build the value before stubbing, calling a mock inside thenReturn nests the stubbing.
+    TrackerIdSchemeParams schemes = preheat.getIdSchemes();
+    ProgramStageDataElements projected =
+        new ProgramStageDataElements(
+            psdes.stream()
+                .filter(ProgramStageDataElement::isCompulsory)
+                .map(psde -> schemes.toMetadataIdentifier(psde.getDataElement()))
+                .collect(Collectors.toSet()),
+            psdes.stream()
+                .map(psde -> schemes.toMetadataIdentifier(psde.getDataElement()))
+                .collect(Collectors.toSet()),
+            psdes.stream()
+                .map(psde -> UID.of(psde.getDataElement().getUid()))
+                .collect(Collectors.toSet()));
+    when(preheat.getProgramStageDataElements(programStage)).thenReturn(projected);
   }
 
   private OrganisationUnit organisationUnit() {

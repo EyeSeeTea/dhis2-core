@@ -57,7 +57,6 @@ import org.hisp.dhis.eventdatavalue.EventDataValue;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.program.Event;
 import org.hisp.dhis.program.UserInfoSnapshot;
-import org.hisp.dhis.reservedvalue.ReservedValueService;
 import org.hisp.dhis.tracker.TrackerType;
 import org.hisp.dhis.tracker.imports.bundle.TrackerBundle;
 import org.hisp.dhis.tracker.imports.bundle.TrackerObjectsMapper;
@@ -76,9 +75,8 @@ import org.springframework.stereotype.Component;
 public class EventPersister
     extends AbstractTrackerPersister<org.hisp.dhis.tracker.imports.domain.Event, Event> {
 
-  public EventPersister(
-      ReservedValueService reservedValueService, DhisConfigurationProvider config) {
-    super(reservedValueService, config);
+  public EventPersister(DhisConfigurationProvider config) {
+    super(config);
   }
 
   @Override
@@ -339,6 +337,11 @@ public class EventPersister
         .filter(e -> e.getTrackedEntity() != null)
         .map(e -> UID.of(e.getTrackedEntity()))
         .collect(Collectors.toSet());
+  }
+
+  @Override
+  protected Set<UID> getUpdatedSingleEvents(Event entity) {
+    return Set.of();
   }
 
   private boolean isNewDataValue(

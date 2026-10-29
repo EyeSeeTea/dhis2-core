@@ -102,7 +102,7 @@ class SystemSettingsTest {
   @Test
   void testKeysWithDefaults() {
     Set<String> keys = SystemSettings.keysWithDefaults();
-    assertEquals(152, keys.size());
+    assertEquals(153, keys.size());
     // just check some at random
     assertTrue(keys.contains("syncSkipSyncForDataChangedBefore"));
     assertTrue(keys.contains("keyTrackerDashboardLayout"));
@@ -254,6 +254,11 @@ class SystemSettingsTest {
     assertTrue(settings.isValid("keyLastMonitoringRun", date));
     assertFalse(settings.isValid("keyLastMonitoringRun", "hello"));
     assertFalse(settings.isValid("keyLastMonitoringRun", "true"));
+    // the correctly serialized form of a Date is accepted ...
+    assertTrue(settings.isValid("keyLastMonitoringRun", Settings.valueOf(new Date())));
+    // ... but Date.toString() output is NOT
+    assertFalse(settings.isValid("keyLastMonitoringRun", new Date().toString()));
+    assertFalse(settings.isValid("keyLastMonitoringRun", "Mon Jun 08 07:50:29 IST 2026"));
   }
 
   @Test

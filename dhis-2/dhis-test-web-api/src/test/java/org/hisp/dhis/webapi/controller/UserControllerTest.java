@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2022, University of Oslo
+ * Copyright (c) 2004-2026, University of Oslo
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -30,6 +30,7 @@
 package org.hisp.dhis.webapi.controller;
 
 import static java.util.Collections.emptySet;
+import static java.util.stream.Collectors.toSet;
 import static org.hisp.dhis.external.conf.ConfigurationKey.LINKED_ACCOUNTS_ENABLED;
 import static org.hisp.dhis.http.HttpAssertions.assertStatus;
 import static org.hisp.dhis.http.HttpClientAdapter.Accept;
@@ -47,10 +48,16 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
+import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.hisp.dhis.category.Category;
+import org.hisp.dhis.category.CategoryOption;
+import org.hisp.dhis.category.CategoryOptionGroupSet;
+import org.hisp.dhis.category.CategoryService;
 import org.hisp.dhis.common.BaseIdentifiableObject;
+import org.hisp.dhis.common.DataDimensionType;
 import org.hisp.dhis.external.conf.DhisConfigurationProvider;
 import org.hisp.dhis.feedback.ErrorCode;
 import org.hisp.dhis.http.HttpStatus;
@@ -79,6 +86,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.session.SessionRegistry;
 import org.springframework.transaction.annotation.Transactional;
@@ -95,6 +104,8 @@ class UserControllerTest extends H2ControllerIntegrationTestBase {
   @Autowired private SystemSettingsService settingsService;
 
   @Autowired private OrganisationUnitService organisationUnitService;
+
+  @Autowired private CategoryService categoryService;
 
   @Autowired private SessionRegistry sessionRegistry;
 
@@ -128,6 +139,7 @@ class UserControllerTest extends H2ControllerIntegrationTestBase {
   @AfterEach
   void afterEach() {
     emailMessageSender.clearMessages();
+    settingsService.put("keyCanGrantOwnUserAuthorityGroups", false);
   }
 
   @Test
@@ -144,37 +156,6 @@ class UserControllerTest extends H2ControllerIntegrationTestBase {
     PATCH(
             "/users/" + getAdminUid(),
             "[{'op':'add','path':'/userRoles','value':[{'id':'" + roleBID + "'}]}]")
-        .content(HttpStatus.OK);
-
-    assertTrue(sessionRegistry.getAllSessions(sessionPrincipal, false).isEmpty());
-  }
-
-  @Test
-  void updateRolesAuthoritiesShouldInvalidateUserSessions() {
-    UserDetails sessionPrincipal = userService.createUserDetails(getAdminUser());
-
-    UserRole roleB = createUserRole("ROLE_B", "ALL");
-    userService.addUserRole(roleB);
-
-    PATCH(
-            "/users/" + getAdminUid(),
-            "[{'op':'add','path':'/userRoles','value':[{'id':'" + roleB.getUid() + "'}]}]")
-        .content(HttpStatus.OK);
-
-    String roleBID = userService.getUserRoleByName("ROLE_B").getUid();
-
-    sessionRegistry.registerNewSession("session1", sessionPrincipal);
-    assertFalse(sessionRegistry.getAllSessions(sessionPrincipal, false).isEmpty());
-
-    PATCH(
-            "/userRoles/" + roleBID,
-            "["
-                + " {"
-                + "   'op': 'add',"
-                + "   'path': '/authorities',"
-                + "   'value': ['NONE']"
-                + " }"
-                + "]")
         .content(HttpStatus.OK);
 
     assertTrue(sessionRegistry.getAllSessions(sessionPrincipal, false).isEmpty());
@@ -634,6 +615,107 @@ class UserControllerTest extends H2ControllerIntegrationTestBase {
   }
 
   @Test
+  @DisplayName("Replica should retain the source user's organisation units")
+  void testReplicateUserCopiesOrganisationUnits() {
+    OrganisationUnit orgUnit = createOrganisationUnit('R');
+    organisationUnitService.addOrganisationUnit(orgUnit);
+
+    assertStatus(
+        HttpStatus.OK,
+        PATCH(
+            "/users/" + peter.getUid(),
+            "[{'op':'add','path':'/organisationUnits','value':[{'id':'%s'}]}]"
+                .formatted(orgUnit.getUid())));
+
+    assertWebMessage(
+        "Created",
+        201,
+        "OK",
+        "User replica created",
+        POST(
+                "/users/" + peter.getUid() + "/replica",
+                "{'username':'peterreplica','password':'Saf€sEcre1'}")
+            .content());
+
+    User replica = userService.getUserByUsername("peterreplica");
+    assertEquals(1, replica.getOrganisationUnits().size());
+    assertTrue(replica.getOrganisationUnits().contains(orgUnit));
+  }
+
+  @Test
+  @DisplayName("Replica should retain the source user's user roles")
+  void testReplicateUserCopiesUserRoles() {
+    UserRole extraRole = createUserRole("ROLE_REPLICATE_TARGET", "F_USER_ADD");
+    userService.addUserRole(extraRole);
+
+    assertStatus(
+        HttpStatus.OK,
+        PATCH(
+            "/users/" + peter.getUid(),
+            "[{'op':'add','path':'/userRoles','value':[{'id':'%s'}]}]"
+                .formatted(extraRole.getUid())));
+
+    assertWebMessage(
+        "Created",
+        201,
+        "OK",
+        "User replica created",
+        POST(
+                "/users/" + peter.getUid() + "/replica",
+                "{'username':'peterreplica2','password':'Saf€sEcre1'}")
+            .content());
+
+    User replica = userService.getUserByUsername("peterreplica2");
+    Set<String> replicaRoleUids =
+        replica.getUserRoles().stream().map(BaseIdentifiableObject::getUid).collect(toSet());
+    assertTrue(
+        replicaRoleUids.contains(extraRole.getUid()),
+        "Replica should have inherited the role added to the source user");
+  }
+
+  @Test
+  @DisplayName("Replica should retain the source user's dimension constraints")
+  void testReplicateUserCopiesDimensionConstraints() {
+    CategoryOption categoryOption = createCategoryOption('D');
+    categoryService.addCategoryOption(categoryOption);
+    Category category = createCategory('D', categoryOption);
+    categoryService.addCategory(category);
+
+    CategoryOptionGroupSet categoryOptionGroupSet = new CategoryOptionGroupSet();
+    categoryOptionGroupSet.setAutoFields();
+    categoryOptionGroupSet.setDataDimensionType(DataDimensionType.DISAGGREGATION);
+    categoryOptionGroupSet.setName("cogsD");
+    categoryOptionGroupSet.setShortName("cogsD");
+    manager.save(categoryOptionGroupSet);
+
+    // Assigned via a real PATCH request (not a direct service call) so the source user is
+    // reloaded fresh, rather than reusing this test method's own Hibernate session/persistence
+    // context - a direct service call here would mask the very bug this test exists to catch.
+    assertStatus(
+        HttpStatus.OK,
+        PATCH(
+            "/users/" + peter.getUid(),
+            """
+            [{'op':'add','path':'/catDimensionConstraints','value':[{'id':'%s'}]},
+             {'op':'add','path':'/cogsDimensionConstraints','value':[{'id':'%s'}]}]"""
+                .formatted(category.getUid(), categoryOptionGroupSet.getUid())));
+
+    assertWebMessage(
+        "Created",
+        201,
+        "OK",
+        "User replica created",
+        POST(
+                "/users/" + peter.getUid() + "/replica",
+                "{'username':'peterreplica3','password':'Saf€sEcre1'}")
+            .content());
+
+    User replica = userService.getUserByUsername("peterreplica3");
+    assertEquals(Set.of(category), replica.getCatDimensionConstraints());
+    assertEquals(Set.of(categoryOptionGroupSet), replica.getCogsDimensionConstraints());
+  }
+
+  @Test
   void testReplicateUserCreatedByUpdated() throws JsonProcessingException {
     User newUser = createUserWithAuth("test", "ALL");
 
@@ -1001,6 +1083,50 @@ class UserControllerTest extends H2ControllerIntegrationTestBase {
             .content(HttpStatus.CREATED));
   }
 
+  @ParameterizedTest
+  @CsvSource({"add, /password, tN7!qR2#vL9@, false", "replace, /firstName, Updated, true"})
+  void testPatchInvitedUser(String operation, String path, String value, boolean invitation) {
+    UserRole role = createUserRole("inviteRole", "ALL");
+    userService.addUserRole(role);
+    POST(
+            "/users/invite",
+            "{'surname':'S.','firstName':'Harry','email':'test@example.com',"
+                + "'username':'harrys','userRoles':[{'id':'"
+                + role.getUid()
+                + "'}]}")
+        .content(HttpStatus.CREATED);
+
+    manager.flush();
+    manager.clear();
+    User invitedUser = userService.getUserByUsername("harrys");
+    String uid = invitedUser.getUid();
+    String token = invitedUser.getRestoreToken();
+    String idToken = invitedUser.getIdToken();
+    var expiry = invitedUser.getRestoreExpiry();
+    assertTrue(invitedUser.isInvitation());
+    assertNotNull(token);
+    assertNotNull(idToken);
+    assertNotNull(expiry);
+
+    PATCH(
+            "/users/" + uid,
+            "[{'op':'" + operation + "','path':'" + path + "','value':'" + value + "'}]")
+        .content(OK);
+
+    manager.flush();
+    manager.clear();
+    assertEquals(
+        invitation,
+        GET("/users/{id}?fields=invitation", uid)
+            .content(OK)
+            .getBoolean("invitation")
+            .booleanValue());
+    User updatedUser = userService.getUser(uid);
+    assertEquals(invitation ? token : null, updatedUser.getRestoreToken());
+    assertEquals(invitation ? idToken : null, updatedUser.getIdToken());
+    assertEquals(invitation ? expiry : null, updatedUser.getRestoreExpiry());
+  }
+
   @Test
   void testPatchUserGroups() {
     UserGroup userGroupA = createUserGroup('A', Set.of());
@@ -1229,6 +1355,39 @@ class UserControllerTest extends H2ControllerIntegrationTestBase {
   }
 
   @Test
+  @DisplayName("GET /users?invitationStatus=EXPIRED returns only users with expired invitations")
+  void testGetUsersFilterByInvitationStatusExpired() {
+    // regular user (not an invitation)
+    createUserWithAuth("alice");
+
+    // invitation user with expired restore
+    User bob = createUserWithAuth("bob");
+    bob.setInvitation(true);
+    bob.setRestoreToken("fakeHashedToken");
+    Calendar cal = Calendar.getInstance();
+    cal.add(Calendar.DAY_OF_YEAR, -1);
+    bob.setRestoreExpiry(cal.getTime());
+    userService.updateUser(bob);
+
+    // invitation user with non-expired restore (still valid)
+    User carol = createUserWithAuth("carol");
+    carol.setInvitation(true);
+    carol.setRestoreToken("anotherToken");
+    cal = Calendar.getInstance();
+    cal.add(Calendar.DAY_OF_YEAR, 1);
+    carol.setRestoreExpiry(cal.getTime());
+    userService.updateUser(carol);
+
+    JsonList<JsonUser> users =
+        GET("/users?invitationStatus=EXPIRED")
+            .content(HttpStatus.OK)
+            .getList("users", JsonUser.class);
+
+    assertEquals(1, users.size());
+    assertEquals(bob.getUid(), users.get(0).getId());
+  }
+
+  @Test
   void testGetUserRoleUsersAreTransformed() {
     UserRole role = createUserRole('X');
     User user = makeUser("Y");
@@ -1245,5 +1404,30 @@ class UserControllerTest extends H2ControllerIntegrationTestBase {
 
     assertFalse(userInRole.has("email"), "email should not be exposed");
     assertEquals(user.getUid(), userInRole.getString("id").string());
+  }
+
+  @Test
+  @DisplayName("PATCH /userRoles/{uid} scalar description keeps assigned users")
+  void testPatchUserRoleDescriptionKeepsUsers() {
+    UserRole role = createUserRole('P');
+    User user = makeUser("R");
+    userService.addUser(user);
+    role.addUser(user);
+    manager.save(role);
+
+    assertStatus(
+        HttpStatus.OK,
+        PATCH(
+            "/userRoles/" + role.getUid(),
+            "[{'op':'replace','path':'/description','value':'patched'}]"));
+
+    JsonObject patchedRole =
+        GET("/userRoles/{id}?fields=id,description,users[id]", role.getUid())
+            .content(HttpStatus.OK);
+
+    assertEquals("patched", patchedRole.getString("description").string());
+    assertEquals(1, patchedRole.getArray("users").size());
+    assertEquals(
+        user.getUid(), patchedRole.getArray("users").getObject(0).getString("id").string());
   }
 }

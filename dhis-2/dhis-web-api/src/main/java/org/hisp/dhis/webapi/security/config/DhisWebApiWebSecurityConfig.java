@@ -158,7 +158,7 @@ public class DhisWebApiWebSecurityConfig {
     private static final Pattern p2 = Pattern.compile("^/apps/.+", Pattern.CASE_INSENSITIVE);
     private static final Pattern p3 = Pattern.compile("^/dhis-web-.+", Pattern.CASE_INSENSITIVE);
     private static final Pattern p4 =
-        Pattern.compile("^/api/deviceClients/.+", Pattern.CASE_INSENSITIVE);
+        Pattern.compile("^/api/auth/enrollDevice", Pattern.CASE_INSENSITIVE);
     private static final Pattern p5 =
         Pattern.compile("^/oauth2/authorize", Pattern.CASE_INSENSITIVE);
     private final List<Pattern> includePatterns = new ArrayList<>(List.of(p1, p2, p3, p4, p5));
@@ -373,6 +373,9 @@ public class DhisWebApiWebSecurityConfig {
                   .requestMatchers(new AntPathRequestMatcher(apiContextPath + "/**/auth/invite"))
                   .permitAll()
                   .requestMatchers(
+                      new AntPathRequestMatcher(apiContextPath + "/**/auth/updatePassword"))
+                  .permitAll()
+                  .requestMatchers(
                       new AntPathRequestMatcher(apiContextPath + "/**/authentication/login"))
                   .permitAll()
                   // Needs to be here because this overrides the previous one
@@ -386,9 +389,6 @@ public class DhisWebApiWebSecurityConfig {
                   .permitAll()
                   .requestMatchers(
                       new AntPathRequestMatcher(apiContextPath + "/**/staticContent/**"))
-                  .permitAll()
-                  .requestMatchers(
-                      new AntPathRequestMatcher(apiContextPath + "/**/externalFileResources/**"))
                   .permitAll()
                   .requestMatchers(
                       new AntPathRequestMatcher(apiContextPath + "/**/files/style/external"))

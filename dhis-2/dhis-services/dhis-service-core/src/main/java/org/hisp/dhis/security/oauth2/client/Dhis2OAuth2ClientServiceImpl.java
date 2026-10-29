@@ -29,8 +29,11 @@
  */
 package org.hisp.dhis.security.oauth2.client;
 
+import static org.hisp.dhis.security.oauth2.OAuth2Constants.ALLOWED_CLIENT_SCOPES;
 import static org.hisp.dhis.security.oauth2.OAuth2Constants.CLIENT_NAME_MAX_LENGTH;
 import static org.hisp.dhis.security.oauth2.OAuth2Constants.SYSTEM_REGISTRAR_CLIENTID;
+import static org.hisp.dhis.security.oauth2.OAuth2Constants.isAllowedClientScope;
+import static org.hisp.dhis.security.oauth2.OAuth2Constants.isReservedScope;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -55,7 +58,6 @@ import org.hisp.dhis.feedback.ErrorReport;
 import org.hisp.dhis.security.oauth2.OAuth2GrantTypes;
 import org.hisp.dhis.setting.SystemSettingsService;
 import org.hisp.dhis.user.CurrentUserUtil;
-import org.hisp.dhis.user.User;
 import org.hisp.dhis.user.UserDetails;
 import org.hisp.dhis.user.UserService;
 import org.springframework.security.jackson2.SecurityJackson2Modules;
@@ -66,6 +68,7 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.jackson2.OAuth2AuthorizationServerJackson2Module;
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
+import org.springframework.security.oauth2.server.authorization.settings.ConfigurationSettingNames;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -114,6 +117,16 @@ public class Dhis2OAuth2ClientServiceImpl
     this.objectMapper.registerModule(new OAuth2AuthorizationServerJackson2Module());
   }
 
+  /**
+   * {@inheritDoc}
+   *
+   * <p>If the current security context's principal is a {@link Jwt} (the DCR Initial Access Token),
+   * the token's {@code sub} claim is resolved to a DHIS2 user and passed as {@code createdBy} so
+   * the new client is owned by the enrolling user. That user must be active, and the client must
+   * pass the admin grant-type and scope rules, so a DCR client never holds {@code
+   * client_credentials} or a reserved scope. The full DCR registration policy is enforced before
+   * this point by {@code DcrRegistrationPolicyValidator}.
+   */
   @Transactional
   @Override
   public void save(RegisteredClient registeredClient) {
@@ -122,11 +135,26 @@ public class Dhis2OAuth2ClientServiceImpl
 
     // Check if we are doing a DCR request, then we are authenticated with the IAT token.
     if (CurrentUserUtil.getAuthentication().getPrincipal() instanceof Jwt jwt) {
-      String username = jwt.getClaimAsString("sub");
-      User user = userService.getUserByUsername(username);
-      UserDetails userDetails = UserDetails.fromUserDontLoadOrgUnits(user);
+      String username = jwt.getSubject();
+      UserDetails user =
+          username == null ? null : userService.createUserDetailsByUsername(username);
+      if (user == null
+          || !user.isEnabled()
+          || !user.isAccountNonLocked()
+          || !user.isAccountNonExpired()
+          || !user.isCredentialsNonExpired()) {
+        throw new IllegalStateException("Initial access token subject is not an active user");
+      }
+      List<ErrorReport> errors = new ArrayList<>();
+      validateGrantTypes(client, errors::add);
+      validateScopes(client, errors::add);
+      if (!errors.isEmpty()) {
+        throw new IllegalArgumentException(
+            "Invalid dynamically registered client: "
+                + errors.stream().map(ErrorReport::getMessage).collect(Collectors.joining(" ")));
+      }
       // Save with created by as 'sub'/username from IAT token
-      this.clientStore.save(client, userDetails, true);
+      this.clientStore.save(client, user, true);
     } else {
       this.clientStore.save(client);
     }
@@ -350,7 +378,9 @@ public class Dhis2OAuth2ClientServiceImpl
   public void validateCreate(Dhis2OAuth2Client entity, Consumer<ErrorReport> errors) {
     checkClientIdNotReserved(entity.getClientId(), "create a client with", errors);
     validateGrantTypes(entity, errors);
+    validateScopes(entity, errors);
     validateRedirectUris(entity, errors);
+    validateSettings(entity, errors);
   }
 
   @Override
@@ -360,7 +390,9 @@ public class Dhis2OAuth2ClientServiceImpl
       checkClientIdNotReserved(newEntity.getClientId(), "rename a client to", errors);
     }
     validateGrantTypes(newEntity, errors);
+    validateScopes(newEntity, errors);
     validateRedirectUris(newEntity, errors);
+    validateSettings(newEntity, errors);
   }
 
   @Override
@@ -370,11 +402,15 @@ public class Dhis2OAuth2ClientServiceImpl
     if (entity.getRawName() == null || entity.getRawName().isEmpty()) {
       entity.setName(truncateName(entity.getClientId()));
     }
-    if (entity.getClientSettings() == null) {
-      ClientSettings defaults = ClientSettings.builder().requireAuthorizationConsent(true).build();
+    // PKCE-by-default (PR-H): new admin/metadata-created clients require S256 PKCE on the
+    // authorization-code flow. Both flags are set explicitly and deliberately instead of
+    // relying on the ClientSettings builder defaults, so the policy is visible and stable.
+    if (entity.getClientSettings() == null || entity.getClientSettings().isBlank()) {
+      ClientSettings defaults =
+          ClientSettings.builder().requireAuthorizationConsent(true).requireProofKey(true).build();
       entity.setClientSettings(writeMap(defaults.getSettings()));
     }
-    if (entity.getTokenSettings() == null) {
+    if (entity.getTokenSettings() == null || entity.getTokenSettings().isBlank()) {
       entity.setTokenSettings(writeMap(TokenSettings.builder().build().getSettings()));
     }
   }
@@ -450,10 +486,135 @@ public class Dhis2OAuth2ClientServiceImpl
   }
 
   /**
-   * Redirect URI allow-list: http and https are always accepted; any other URI must match verbatim
-   * an entry in the {@code deviceEnrollmentRedirectAllowlist} system setting. Default-to-deny
-   * closes the stored-XSS / token-exfiltration surface that Spring Authorization Server leaves open
-   * when it emits the {@code Location} header without scheme filtering.
+   * Enforce the admin scope policy: reserved scopes ({@code client.create} and anything under the
+   * {@code client.} prefix) can never be assigned through admin paths — a client carrying them
+   * could mint new clients via {@code /connect/register}. All other scopes must be members of
+   * {@link org.hisp.dhis.security.oauth2.OAuth2Constants#ALLOWED_CLIENT_SCOPES}. The DCR system
+   * registrar is exempt so a full metadata round-trip can re-import it (same exception as {@link
+   * #validateGrantTypes}).
+   */
+  private void validateScopes(Dhis2OAuth2Client entity, Consumer<ErrorReport> errors) {
+    if (SYSTEM_REGISTRAR_CLIENTID.equals(entity.getClientId())) {
+      return;
+    }
+    String raw = entity.getScopes();
+    if (raw == null || raw.isBlank()) {
+      return;
+    }
+    for (String scope : raw.split(",")) {
+      String trimmed = scope.trim();
+      if (trimmed.isEmpty()) {
+        continue;
+      }
+      if (isReservedScope(trimmed)) {
+        errors.accept(
+            new ErrorReport(
+                Dhis2OAuth2Client.class,
+                ErrorCode.E4000,
+                "Scope '"
+                    + trimmed
+                    + "' is reserved for the system DCR registrar and cannot be assigned to"
+                    + " clients."));
+      } else if (!isAllowedClientScope(trimmed)) {
+        errors.accept(
+            new ErrorReport(
+                Dhis2OAuth2Client.class,
+                ErrorCode.E4000,
+                "Invalid scope: '"
+                    + trimmed
+                    + "'. Allowed scopes are: "
+                    + String.join(", ", ALLOWED_CLIENT_SCOPES.stream().sorted().toList())
+                    + "."));
+      }
+    }
+  }
+
+  /**
+   * Validate admin-supplied {@code clientSettings} / {@code tokenSettings} JSON at write time, so a
+   * row that would later fail (or surprise) {@link #toObject} is rejected up front instead of
+   * breaking the authorization server at runtime.
+   *
+   * <p>{@code clientSettings} must parse with the same Jackson configuration {@link #toObject}
+   * uses, and must carry both {@code settings.client.require-proof-key} and {@code
+   * settings.client.require-authorization-consent} as booleans — Spring AS unboxes these on every
+   * authorize call, so a partial map would NPE at runtime. {@code
+   * settings.client.require-proof-key} must be {@code true} for {@code authorization_code} clients;
+   * disabling PKCE is rejected. {@code client_credentials} clients (the DCR system registrar) are
+   * not subject to this check.
+   */
+  private void validateSettings(Dhis2OAuth2Client entity, Consumer<ErrorReport> errors) {
+    String clientSettings = entity.getClientSettings();
+    if (clientSettings != null && !clientSettings.isBlank()) {
+      Map<String, Object> settings = tryParseSettings("clientSettings", clientSettings, errors);
+      if (settings != null) {
+        Boolean proofKey =
+            checkRequiredBooleanSetting(
+                settings, ConfigurationSettingNames.Client.REQUIRE_PROOF_KEY, errors);
+        checkRequiredBooleanSetting(
+            settings, ConfigurationSettingNames.Client.REQUIRE_AUTHORIZATION_CONSENT, errors);
+        // PKCE applies to the authorization_code grant only. The DCR system registrar is
+        // client_credentials and is created with the SAS builder default (false on SAS 1.x);
+        // a full metadata export/import must be able to re-import it.
+        if (Boolean.FALSE.equals(proofKey)
+            && getAuthorizationGrantTypesSet(entity)
+                .contains(AuthorizationGrantType.AUTHORIZATION_CODE)) {
+          errors.accept(
+              new ErrorReport(
+                  Dhis2OAuth2Client.class,
+                  ErrorCode.E4000,
+                  "PKCE cannot be disabled: settings.client.require-proof-key must be true."));
+        }
+      }
+    }
+    String tokenSettings = entity.getTokenSettings();
+    if (tokenSettings != null && !tokenSettings.isBlank()) {
+      tryParseSettings("tokenSettings", tokenSettings, errors);
+    }
+  }
+
+  /**
+   * Parse a settings JSON string with the same mapper {@link #toObject} uses at read time; reports
+   * an {@link ErrorCode#E4000} and returns {@code null} when unreadable.
+   */
+  @CheckForNull
+  private Map<String, Object> tryParseSettings(
+      String field, String json, Consumer<ErrorReport> errors) {
+    try {
+      return this.objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
+    } catch (Exception ex) {
+      errors.accept(
+          new ErrorReport(
+              Dhis2OAuth2Client.class,
+              ErrorCode.E4000,
+              "Invalid " + field + " JSON: " + ex.getMessage()));
+      return null;
+    }
+  }
+
+  /**
+   * Require the given settings key to be present and boolean; reports an error and returns {@code
+   * null} otherwise.
+   */
+  @CheckForNull
+  private static Boolean checkRequiredBooleanSetting(
+      Map<String, Object> settings, String key, Consumer<ErrorReport> errors) {
+    if (settings.get(key) instanceof Boolean value) {
+      return value;
+    }
+    errors.accept(
+        new ErrorReport(
+            Dhis2OAuth2Client.class,
+            ErrorCode.E4000,
+            "Invalid clientSettings: setting '" + key + "' must be present and a boolean."));
+    return null;
+  }
+
+  /**
+   * Redirect URI allow-list: http and https are always accepted; any other URI (e.g. a custom
+   * scheme like {@code dhis2oauth://oauth}) must match verbatim an entry in the {@code
+   * deviceEnrollmentRedirectAllowlist} system setting. Default-to-deny closes the stored-XSS and
+   * token-exfiltration surface that Spring Authorization Server leaves open when it emits the
+   * {@code Location} header without scheme filtering.
    */
   private void validateRedirectUris(Dhis2OAuth2Client entity, Consumer<ErrorReport> errors) {
     if (entity.getRedirectUris() == null) {

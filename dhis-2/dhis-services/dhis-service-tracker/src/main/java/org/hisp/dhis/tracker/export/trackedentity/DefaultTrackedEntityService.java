@@ -32,7 +32,9 @@ package org.hisp.dhis.tracker.export.trackedentity;
 import static org.hisp.dhis.audit.AuditOperationType.SEARCH;
 import static org.hisp.dhis.user.CurrentUserUtil.getCurrentUserDetails;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -40,6 +42,7 @@ import java.util.stream.Collectors;
 import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import lombok.RequiredArgsConstructor;
+import org.hisp.dhis.common.BaseIdentifiableObject;
 import org.hisp.dhis.common.IndirectTransactional;
 import org.hisp.dhis.common.NonTransactional;
 import org.hisp.dhis.common.UID;
@@ -47,12 +50,15 @@ import org.hisp.dhis.feedback.BadRequestException;
 import org.hisp.dhis.feedback.ForbiddenException;
 import org.hisp.dhis.feedback.NotFoundException;
 import org.hisp.dhis.fileresource.FileResource;
+import org.hisp.dhis.fileresource.FileResourceDomain;
 import org.hisp.dhis.fileresource.FileResourceService;
 import org.hisp.dhis.fileresource.ImageFileDimension;
 import org.hisp.dhis.program.Program;
 import org.hisp.dhis.trackedentity.TrackedEntity;
 import org.hisp.dhis.trackedentity.TrackedEntityAttribute;
+import org.hisp.dhis.trackedentity.TrackedEntityAttributeService;
 import org.hisp.dhis.trackedentity.TrackedEntityProgramOwner;
+import org.hisp.dhis.trackedentity.TrackedEntityType;
 import org.hisp.dhis.trackedentityattributevalue.TrackedEntityAttributeValue;
 import org.hisp.dhis.tracker.Page;
 import org.hisp.dhis.tracker.PageParams;
@@ -84,6 +90,8 @@ class DefaultTrackedEntityService implements TrackedEntityService {
   private final OperationsParamsValidator operationsParamsValidator;
 
   private final TrackedEntityOperationParamsMapper mapper;
+
+  private final TrackedEntityAttributeService trackedEntityAttributeService;
 
   @Override
   @IndirectTransactional
@@ -143,7 +151,11 @@ class DefaultTrackedEntityService implements TrackedEntityService {
               + " could not be found.");
     }
 
-    return fileResourceService.getExistingFileResource(fileResourceUid);
+    // Like the aggregate data value API, only data value files are served as data values.
+    String uid = fileResourceUid;
+    return fileResourceService
+        .getFileResource(uid, FileResourceDomain.DATA_VALUE)
+        .orElseThrow(() -> new NotFoundException(FileResource.class, uid));
   }
 
   @Nonnull
@@ -293,9 +305,51 @@ class DefaultTrackedEntityService implements TrackedEntityService {
                 trackedEntity, queryParams.getEnrolledInTrackerProgram()));
       }
     }
+    if (operationParams.getFields().isIncludesAttributes()) {
+      filterReadableAttributeValues(trackedEntities, queryParams);
+    }
     trackedEntityAuditService.addTrackedEntityAudit(SEARCH, user.getUsername(), trackedEntities);
 
     return trackedEntities;
+  }
+
+  /**
+   * Removes attribute values the user is not allowed to read. The attribute objects carried by the
+   * exported values are lightweight and hold no sharing information, so we resolve the set of
+   * readable attribute UIDs from the metadata (which honors both the parent program/type data-read
+   * access and each attribute's own metadata sharing) and filter the values by UID.
+   *
+   * <p>The program scope is taken from the query and is the same for all results, while the tracked
+   * entity type can differ per tracked entity. The readable set is therefore resolved once for all
+   * types present in the result and applied to every tracked entity; this is safe because the store
+   * only attaches attribute values belonging to a tracked entity's own type (and the queried
+   * program).
+   */
+  private void filterReadableAttributeValues(
+      List<TrackedEntity> trackedEntities, TrackedEntityQueryParams queryParams) {
+    Program program = queryParams.getEnrolledInTrackerProgram();
+    List<Program> programs = program != null ? List.of(program) : List.of();
+    Set<TrackedEntityType> trackedEntityTypes =
+        trackedEntities.stream()
+            .map(TrackedEntity::getTrackedEntityType)
+            .collect(Collectors.toSet());
+
+    Set<String> readableAttributes =
+        trackedEntityAttributeService
+            .getAllUserReadableTrackedEntityAttributes(
+                programs, new ArrayList<>(trackedEntityTypes))
+            .stream()
+            .map(BaseIdentifiableObject::getUid)
+            .collect(Collectors.toSet());
+    for (TrackedEntity trackedEntity : trackedEntities) {
+      Set<TrackedEntityAttributeValue> filtered =
+          trackedEntity.getTrackedEntityAttributeValues().stream()
+              .filter(
+                  attributeValue ->
+                      readableAttributes.contains(attributeValue.getAttribute().getUid()))
+              .collect(Collectors.toCollection(LinkedHashSet::new));
+      trackedEntity.setTrackedEntityAttributeValues(filtered);
+    }
   }
 
   @Override

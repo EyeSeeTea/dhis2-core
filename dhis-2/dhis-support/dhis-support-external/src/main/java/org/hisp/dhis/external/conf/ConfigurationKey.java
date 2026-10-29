@@ -62,6 +62,9 @@ public enum ConfigurationKey {
   /** SQL view write enabled, can be 'on', 'off'. (default: off) */
   SYSTEM_SQL_VIEW_WRITE_ENABLED("system.sql_view_write_enabled", Constants.OFF, false),
 
+  /** JasperReports report designs enabled, can be 'on', 'off'. (default: off) */
+  JASPER_REPORTS_ENABLED("jasper.reports.enabled", Constants.OFF, false),
+
   /**
    * Set the maximum size for the cache instance to be built. If set to 0, no caching will take
    * place. Cannot be a negative value. (default: 0).
@@ -97,6 +100,12 @@ public enum ConfigurationKey {
 
   /** Database connection URL. */
   CONNECTION_URL("connection.url", "", false),
+
+  /**
+   * If present, overrides the connection.url value - useful when running Apache Doris in a
+   * container
+   */
+  DORIS_CATALOG_CONNECTION_URL("doris.catalog.connection.url", "", false),
 
   /** Analytics Database connection URL. */
   ANALYTICS_CONNECTION_URL("analytics.connection.url", "", false),
@@ -192,6 +201,21 @@ public enum ConfigurationKey {
    * connections never expire (default: 7200).
    */
   ANALYTICS_CONNECTION_POOL_MAX_IDLE_TIME("analytics.connection.pool.max_idle_time", "7200", false),
+
+  /** Minimum number of idle connections to maintain, Hikari only (default: 10). */
+  CONNECTION_POOL_MIN_IDLE("connection.pool.min_idle", "10", false),
+
+  /**
+   * Interval to keep idle connections alive. Does not reset idle timeout, Hikari only (default: 2
+   * minutes).
+   */
+  CONNECTION_POOL_KEEP_ALIVE_TIME_SECONDS("connection.pool.keep_alive_time_seconds", "120", false),
+
+  /**
+   * Connection max lifetime. An in-use connection will never be retired, only when it is idle will
+   * it be removed. Hikari only (default: 30 minutes).
+   */
+  CONNECTION_POOL_MAX_LIFETIME_SECONDS("connection.pool.max_lifetime_seconds", "1800", false),
 
   /**
    * Number of seconds that Connections in excess of minPoolSize should be permitted to remain idle
@@ -418,6 +442,15 @@ public enum ConfigurationKey {
   ANALYTICS_TABLE_SKIP_COLUMN("analytics.table.skip_column", "", false),
 
   /**
+   * Analytics table SQL hooks feature. When off (default), create/update of {@code
+   * AnalyticsTableHook} metadata is rejected, also for superusers importing with {@code
+   * skipValidation}, and scheduled hook SQL is not executed. High risk when enabled: stored SQL
+   * runs as the DHIS2 database role, and every stored hook runs from the next table generation.
+   * When enabled, only superusers can create or update hooks. Values: on/off.
+   */
+  ANALYTICS_TABLE_HOOKS_ENABLED("analytics.table_hooks.enabled", Constants.OFF, false),
+
+  /**
    * Artemis support mode, 2 modes supported: EMBEDDED (starts up an embedded Artemis which lives in
    * the same process as your DHIS2 instance), NATIVE (connects to an external Artemis instance,
    * remember to set username / password if required). (default: EMBEDDED)
@@ -521,6 +554,17 @@ public enum ConfigurationKey {
    * (default: on)
    */
   CHANGELOG_AGGREGATE("changelog.aggregate", Constants.ON),
+
+  /**
+   * Maximum number of seconds a statement reading the aggregate data value change log ({@code
+   * /api/audits/dataValue}, {@code /api/dataEntry/dataValueContext}) may run for a user who is not
+   * a superuser. A statement that runs longer is cancelled and the request fails with 409. {@code
+   * 0} disables the timeout. (default: 30)
+   *
+   * <p>Set this below any timeout in front of DHIS2, such as a reverse proxy or load balancer: a
+   * client that gives up does not cancel the statement.
+   */
+  CHANGELOG_AGGREGATE_QUERY_TIMEOUT("changelog.aggregate.query.timeout", "30", false),
 
   /**
    * Enable/disable changelog/history log of tracker data values. <br>
@@ -741,6 +785,14 @@ public enum ConfigurationKey {
   /** Whether to generate a new JWT key if the keystore is missing. */
   OAUTH2_JWT_KEYSTORE_GENERATE_IF_MISSING(
       "oauth2.server.jwt.keystore.generate-if-missing", "true", false),
+
+  /**
+   * Refresh token time-to-live in seconds for clients registered through OIDC Dynamic Client
+   * Registration (e.g. Android devices). Refresh tokens are rotated on every use, so this is a
+   * sliding window: each refresh issues a new refresh token valid for this duration. (default: 30
+   * days)
+   */
+  OAUTH2_SERVER_DCR_REFRESH_TOKEN_TTL("oauth2.server.dcr.refresh-token-ttl", "2592000", false),
 
   /** Ehcache monitoring. (default: off) */
   MONITORING_EHCACHE_ENABLED("monitoring.ehcache.enabled", Constants.OFF, false),

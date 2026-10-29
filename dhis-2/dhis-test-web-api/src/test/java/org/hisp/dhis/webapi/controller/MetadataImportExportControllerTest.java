@@ -592,7 +592,6 @@ class MetadataImportExportControllerTest extends H2ControllerIntegrationTestBase
             [{"op":"add", "path":"/sharing",
             "value":{"owner": "GOLswS44mh8",
               "public": "rw------",
-              "external": false,
               "users": {"%s": {"id": "%s", "access": "rw------"}}}}]"""
                 .formatted(userA.getUid(), userA.getUid()))
         .content(HttpStatus.OK);
@@ -814,6 +813,50 @@ class MetadataImportExportControllerTest extends H2ControllerIntegrationTestBase
             .getArray("organisationUnitGroupSetDimensions")
             .getObject(0)
             .getArray("organisationUnitGroups")
+            .getObject(0)
+            .getString("id")
+            .string());
+  }
+
+  @Test
+  @DisplayName(
+      "Importing Map with MapView with CategoryOptionGroupSetDimensions in same import succeeds")
+  void importingMapWithMapViewAndCategoryOptionGroupSetDimensionsPayloadTest() {
+    // When importing a Map with MapView that references CategoryOptionGroupSet data in the same
+    // import (as produced by a metadata dependency export)
+    JsonImportSummary report =
+        POST(
+                "/metadata",
+                Path.of("metadata/metadata_map_mapview_with_cat_option_group_set_dimension.json"))
+            .content()
+            .get("response")
+            .as(JsonImportSummary.class);
+
+    // Then the import is successful and the CategoryOptionGroupSetDimension is present when
+    // retrieved
+    assertEquals("OK", report.getStatus());
+
+    JsonMixed content = GET("/maps/C7x2WOLhCA8").content(HttpStatus.OK);
+
+    assertEquals(
+        "C5jldMd8OHv",
+        content
+            .getArray("mapViews")
+            .getObject(0)
+            .getArray("categoryOptionGroupSetDimensions")
+            .getObject(0)
+            .getObject("categoryOptionGroupSet")
+            .getString("id")
+            .string());
+
+    assertEquals(
+        "CYxK4wmcPqA",
+        content
+            .getArray("mapViews")
+            .getObject(0)
+            .getArray("categoryOptionGroupSetDimensions")
+            .getObject(0)
+            .getArray("categoryOptionGroups")
             .getObject(0)
             .getString("id")
             .string());

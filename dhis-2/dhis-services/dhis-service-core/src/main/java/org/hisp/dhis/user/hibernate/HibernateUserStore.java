@@ -299,6 +299,10 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
       hql += hlp.whereAnd() + " u.lastLogin < :inactiveSince ";
     }
 
+    if (params.isNeverLoggedIn()) {
+      hql += hlp.whereAnd() + " u.lastLogin is null ";
+    }
+
     if (params.getPasswordLastUpdated() != null) {
       hql += hlp.whereAnd() + " u.passwordLastUpdated < :passwordLastUpdated ";
     }
@@ -619,6 +623,15 @@ public class HibernateUserStore extends HibernateIdentifiableObjectStore<User>
     query.setParameter("usernames", usernames);
 
     return query.getResultList();
+  }
+
+  @Override
+  public List<String> getUsernamesByUserRole(@Nonnull UID roleUid) {
+    return getSession()
+        .createQuery(
+            "select u.username from User u join u.userRoles r where r.uid = :roleUid", String.class)
+        .setParameter("roleUid", roleUid.getValue())
+        .list();
   }
 
   @Override

@@ -46,6 +46,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import javax.annotation.CheckForNull;
 import javax.annotation.Nonnull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -76,6 +78,8 @@ import org.hisp.dhis.eventvisualization.EventVisualization;
 import org.hisp.dhis.fieldfilter.Defaults;
 import org.hisp.dhis.fieldfiltering.FieldFilterParams;
 import org.hisp.dhis.fieldfiltering.FieldFilterService;
+import org.hisp.dhis.fileresource.FileResource;
+import org.hisp.dhis.fileresource.FileResourceService;
 import org.hisp.dhis.indicator.Indicator;
 import org.hisp.dhis.indicator.IndicatorType;
 import org.hisp.dhis.interpretation.Interpretation;
@@ -142,6 +146,8 @@ public class DefaultMetadataExportService implements MetadataExportService {
 
   private final UserService userService;
 
+  private final FileResourceService fileResourceService;
+
   @Override
   @SuppressWarnings("unchecked")
   @Transactional(readOnly = true)
@@ -195,6 +201,10 @@ public class DefaultMetadataExportService implements MetadataExportService {
 
       List<? extends IdentifiableObject> objects = queryService.query(query);
 
+      if (klass == FileResource.class) {
+        objects = readableFileResources(objects, params.getCurrentUserDetails());
+      }
+
       if (!objects.isEmpty()) {
         log.info(
             "("
@@ -214,6 +224,22 @@ public class DefaultMetadataExportService implements MetadataExportService {
   }
 
   /**
+   * {@link FileResource} is not a shareable type, so its query applies no row level access and
+   * returns every file resource. This keeps only those the user may read by the rule of {@link
+   * FileResourceService#canRead}, which the file resource API applies to each of them. A superuser,
+   * and an export without a user, keep all of them.
+   */
+  private List<? extends IdentifiableObject> readableFileResources(
+      List<? extends IdentifiableObject> objects, @CheckForNull UserDetails user) {
+    if (user == null || user.isSuper()) {
+      return objects;
+    }
+    return objects.stream()
+        .filter(object -> fileResourceService.canRead(user, (FileResource) object))
+        .toList();
+  }
+
+  /**
    * This predicate is used to filter out deprecated Analytics schemas, {@link EventChart} & {@link
    * EventReport}.As they are no longer used ({@link EventVisualization} has replaced them), they
    * should be removed from the metadata export flow. This was causing issues otherwise. See <a
@@ -224,7 +250,7 @@ public class DefaultMetadataExportService implements MetadataExportService {
 
   @Override
   @Transactional(readOnly = true)
-  public ObjectNode getMetadataAsObjectNode(MetadataExportParams params) {
+  public ObjectNode exportMetadataVersion(MetadataExportParams params) {
     ObjectNode rootNode = fieldFilterService.createObjectNode();
     SystemInfoForMetadataExport systemInfo = systemService.getSystemInfoForMetadataExport();
 
@@ -234,6 +260,20 @@ public class DefaultMetadataExportService implements MetadataExportService {
         .put(SYSTEM_REVISION, systemInfo.revision())
         .put(SYSTEM_VERSION, systemInfo.version())
         .put(SYSTEM_DATE, DateUtils.toIso8601(systemInfo.serverDate()));
+
+    params.setClasses(
+        schemaService.getMetadataSchemas().stream()
+            .filter(
+                schema ->
+                    !schema.isEmbeddedObject()
+                        && schema.isIdentifiableObject()
+                        && schema.isPersisted())
+            .filter(s -> !s.isSecondaryMetadata())
+            .filter(DEPRECATED_ANALYTICS_SCHEMAS)
+            .map(Schema::getKlass)
+            .filter(IdentifiableObject.class::isAssignableFrom)
+            .map(klass -> (Class<? extends IdentifiableObject>) klass)
+            .collect(Collectors.toSet()));
 
     Map<Class<? extends IdentifiableObject>, List<? extends IdentifiableObject>> metadata =
         getMetadata(params);
