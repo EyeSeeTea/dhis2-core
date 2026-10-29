@@ -39,6 +39,7 @@ public enum ErrorCode {
   E1004("API query cannot be performed"),
   E1005("API query object not found"),
   E1006("API request not permitted for the current user"),
+  E1007("Feature is disabled by configuration, requires `{0} = on` in dhis.conf"),
 
   /* Basic metadata */
   E1100("Data element not found or not accessible: `{0}`"),
@@ -160,6 +161,12 @@ public enum ErrorCode {
   E2046("Error parsing CSV file: {0}"),
   E2047("Data value key combination does not exist: {0}"),
   E2048("Error processing gzipped content: {0}"),
+  E2050("User is not allowed to read data of the data value: `{0}`, `{1}`, `{2}`"),
+  E2051(
+      "An unpaged data value change log returns at most `{0}` entries to a user who is not a superuser, use paging"),
+  E2052(
+      "Data value change log pages end at entry `{0}` for a user who is not a superuser, use filters to read older entries"),
+
   /* Outlier detection */
   E2200("At least one data element must be specified"),
   E2201("Start date and end date or relative period must be specified"),
@@ -238,6 +245,8 @@ public enum ErrorCode {
   E3152("SMS 2FA is enabled on user, can not change phone number. Disable 2FA first"),
   // new code, not existing in 30** codes
   E3199("2FA code was sent too many times, please try again later"),
+  E3053("User `{0}` is not allowed to replicate a user lacking their dimension constraints"),
+
   /* Metadata Validation */
   E4000("Missing required property `{0}`"),
   E4001("Maximum length of property `{0}`is {1}, but given length was {2}"),
@@ -258,6 +267,8 @@ public enum ErrorCode {
   E4015("Property `{0}` refers to an object that does not exist, could not find `{1}`"),
   E4016(
       "Object referenced by the `{0}` property is already associated with another object, value: `{1}`"),
+  E4094(
+      "Property `{0}` must refer to an unassigned `{1}` file resource uploaded by the current user, but was given `{2}`"),
   E4017("RenderingType `{0}` is not supported for ValueType `{1}`"),
   E4018("Property `{0}` must be set when property `{1}` is `{2}`"),
   E4019("Failed to parse pattern `{0}` {1}"),
