@@ -96,6 +96,9 @@ dhis2.de.currentCompletedByUser = null;
 // Instance of the StorageManager
 dhis2.de.storageManager = new StorageManager();
 
+// Object to store metaData and dataSetAssociations
+dhis2.de.metaDataStorage = {};
+
 // Indicates whether current form is multi org unit
 dhis2.de.multiOrganisationUnit = false;
 
@@ -332,11 +335,11 @@ dhis2.de.loadMetaData = function()
     	dataType: 'json',
     	success: function( json )
 	    {
-	        sessionStorage[dhis2.de.cst.metaData] = JSON.stringify( json.metaData );
+	        dhis2.de.metaDataStorage[dhis2.de.cst.metaData] = json.metaData;
 	    },
 	    complete: function()
 	    {
-	        var metaData = JSON.parse( sessionStorage[dhis2.de.cst.metaData] );
+	        var metaData = dhis2.de.metaDataStorage[dhis2.de.cst.metaData];
 	        dhis2.de.emptyOrganisationUnits = metaData.emptyOrganisationUnits;
 	        dhis2.de.significantZeros = metaData.significantZeros;
 	        dhis2.de.dataElements = metaData.dataElements;
@@ -363,11 +366,11 @@ dhis2.de.loadDataSetAssociations = function()
     	dataType: 'json',
     	success: function( json )
 	    {
-	        sessionStorage[dhis2.de.cst.dataSetAssociations] = JSON.stringify( json.dataSetAssociations );
+	        dhis2.de.metaDataStorage[dhis2.de.cst.dataSetAssociations] = json.dataSetAssociations;
 	    },
 	    complete: function()
 	    {
-	        var metaData = JSON.parse( sessionStorage[dhis2.de.cst.dataSetAssociations] );
+	        var metaData = dhis2.de.metaDataStorage[dhis2.de.cst.dataSetAssociations];
 	        dhis2.de.dataSetAssociationSets = metaData.dataSetAssociationSets;
 	        dhis2.de.organisationUnitAssociationSetMap = metaData.organisationUnitAssociationSetMap;	        
 	        def.resolve();
